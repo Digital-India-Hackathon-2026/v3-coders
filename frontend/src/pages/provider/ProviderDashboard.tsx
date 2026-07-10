@@ -1,46 +1,98 @@
+import { useState, useEffect } from "react";
 import { Tractor, IndianRupee, Clock, CheckCircle2, ChevronRight } from "lucide-react";
 import { KSCard, KSBadge } from "../../components/ui";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import API from "../../services/api";
+
+interface Booking {
+  id: number;
+  farmer_name: string;
+  farmer_phone: string;
+  service_name: string;
+  service_type: string;
+  booking_date: string;
+  hours_required: string;
+  total_price: string;
+  status: "pending" | "confirmed" | "completed" | "cancelled" | "rejected";
+  location: string;
+}
 
 const ProviderDashboard = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchProviderData = async () => {
+      try {
+        const res = await API.get("/bookings/provider");
+        setBookings(res.data.bookings);
+      } catch (err: any) {
+        console.error("Error loading provider bookings", err);
+        setError("Unable to load dashboard details. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProviderData();
+  }, []);
+
+  // Calculate statistics
+  const pendingCount = bookings.filter(b => b.status === "pending").length;
+  const completedCount = bookings.filter(b => b.status === "completed").length;
+  const totalEarnings = bookings
+    .filter(b => b.status === "completed")
+    .reduce((sum, b) => sum + parseFloat(b.total_price), 0);
 
   const stats = [
-    { title: "Pending Requests", value: "1", icon: <Clock className="text-yellow-600" size={24} />, bg: "bg-yellow-50" },
-    { title: "Completed Bookings", value: "48", icon: <CheckCircle2 className="text-green-700" size={24} />, bg: "bg-green-50" },
-    { title: "Total Earnings", value: "₹92,400", icon: <IndianRupee className="text-blue-600" size={24} />, bg: "bg-blue-50" },
+    { title: "Pending Requests", value: pendingCount.toString(), icon: <Clock className="text-yellow-600" size={24} />, bg: "bg-yellow-50" },
+    { title: "Completed Bookings", value: completedCount.toString(), icon: <CheckCircle2 className="text-green-700" size={24} />, bg: "bg-green-50" },
+    { title: "Total Earnings", value: `₹${totalEarnings.toLocaleString("en-IN")}`, icon: <IndianRupee className="text-blue-600" size={24} />, bg: "bg-blue-50" },
   ];
 
-  const recentRequests = [
-    {
-      id: "KS-9082",
-      farmer: "Ramesh Kumar",
-      service: "Paddy Harvesting",
-      acres: "3 Acres",
-      date: "July 12, 2026",
-      status: "pending",
-      price: "₹8,000",
-    },
-    {
-      id: "KS-8971",
-      farmer: "Rajesh Patil",
-      service: "Tractor Tilling",
-      acres: "2 Acres",
-      date: "July 10, 2026",
-      status: "accepted",
-      price: "₹3,500",
-    },
-  ];
+  const recentRequests = bookings.slice(0, 5);
+
+  const formatSQLDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-700"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
       {/* Welcome Heading */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Welcome back, Balaji!</h1>
+          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">
+            Welcome back, {user?.name || "Provider"}!
+          </h1>
           <p className="text-slate-500 mt-1">Manage jobs, schedule equipment and review your weekly revenue.</p>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm border border-red-100">
+          {error}
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid md:grid-cols-3 gap-6">
@@ -102,38 +154,54 @@ const ProviderDashboard = () => {
             Manage All
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-400 font-semibold text-sm">
-                <th className="px-6 py-4">Booking ID</th>
-                <th className="px-6 py-4">Farmer</th>
-                <th className="px-6 py-4">Service</th>
-                <th className="px-6 py-4">Land Area</th>
-                <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Revenue</th>
-                <th className="px-6 py-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-600">
-              {recentRequests.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/50 transition">
-                  <td className="px-6 py-4 font-bold text-slate-800">{r.id}</td>
-                  <td className="px-6 py-4 font-semibold text-slate-700">{r.farmer}</td>
-                  <td className="px-6 py-4">{r.service}</td>
-                  <td className="px-6 py-4">{r.acres}</td>
-                  <td className="px-6 py-4 text-sm">{r.date}</td>
-                  <td className="px-6 py-4 font-bold text-slate-800">{r.price}</td>
-                  <td className="px-6 py-4">
-                    <KSBadge variant={r.status === "accepted" ? "success" : "warning"}>
-                      {r.status}
-                    </KSBadge>
-                  </td>
+        {recentRequests.length === 0 ? (
+          <div className="p-8 text-center text-slate-400">
+            No service requests found.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-400 font-semibold text-sm">
+                  <th className="px-6 py-4">Booking ID</th>
+                  <th className="px-6 py-4">Farmer</th>
+                  <th className="px-6 py-4">Service</th>
+                  <th className="px-6 py-4">Duration</th>
+                  <th className="px-6 py-4">Date</th>
+                  <th className="px-6 py-4">Revenue</th>
+                  <th className="px-6 py-4">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-600">
+                {recentRequests.map((r) => (
+                  <tr key={r.id} className="hover:bg-slate-50/50 transition">
+                    <td className="px-6 py-4 font-bold text-slate-800">KS-{r.id}</td>
+                    <td className="px-6 py-4 font-semibold text-slate-700">{r.farmer_name}</td>
+                    <td className="px-6 py-4">{r.service_name}</td>
+                    <td className="px-6 py-4">{r.hours_required} hrs</td>
+                    <td className="px-6 py-4 text-sm">{formatSQLDate(r.booking_date)}</td>
+                    <td className="px-6 py-4 font-bold text-slate-800">₹{parseFloat(r.total_price).toLocaleString("en-IN")}</td>
+                    <td className="px-6 py-4">
+                      <KSBadge
+                        variant={
+                          r.status === "completed"
+                            ? "success"
+                            : r.status === "pending"
+                            ? "warning"
+                            : r.status === "confirmed"
+                            ? "info"
+                            : "danger"
+                        }
+                      >
+                        {r.status}
+                      </KSBadge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

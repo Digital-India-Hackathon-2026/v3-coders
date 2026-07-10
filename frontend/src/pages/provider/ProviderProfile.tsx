@@ -1,23 +1,53 @@
-import React, { useState } from "react";
-import { User, Phone, MapPin, ShieldCheck, Tractor, Briefcase } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { User, Phone, ShieldCheck, Tractor, Briefcase } from "lucide-react";
 import { KSCard, KSButton, KSBadge } from "../../components/ui";
+import { useAuth } from "../../context/AuthContext";
 
 const ProviderProfile = () => {
-  const [businessName, setBusinessName] = useState("Balaji Agri Services");
-  const [owner, setOwner] = useState("Balaji Rao");
-  const [phone, setPhone] = useState("+91 98765 01234");
-  const [location, setLocation] = useState("Warangal Main Road, Warangal");
-  const [range, setRange] = useState("30");
+  const { user, updateUserProfile } = useAuth();
+  
+  const [businessName, setBusinessName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [extraInfo, setExtraInfo] = useState("");
+  
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (user) {
+      setBusinessName(user.name);
+      setPhone(user.phone);
+      setExtraInfo(user.extraInfo || "");
+    }
+  }, [user]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    if (!businessName || !phone) {
+      setError("Business name and contact phone are required.");
+      return;
+    }
+
+    setError("");
+    setSubmitting(true);
+    try {
+      await updateUserProfile({
+        name: businessName,
+        phone,
+        extraInfo,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err: any) {
+      setError(err.message || "Failed to save profile. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
+    <div className="max-w-2xl mx-auto space-y-8">
       <div>
         <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Business Profile</h1>
         <p className="text-slate-500 mt-1">Configure your agency details, service radius, and verify identity.</p>
@@ -31,7 +61,13 @@ const ProviderProfile = () => {
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 gap-6">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl">
+            <span className="font-semibold">{error}</span>
+          </div>
+        )}
+
+        <div className="grid gap-6">
           {/* Business Info */}
           <KSCard className="space-y-4">
             <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
@@ -45,17 +81,8 @@ const ProviderProfile = () => {
                 type="text"
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Owner / Contact Person</label>
-              <input
-                type="text"
-                value={owner}
-                onChange={(e) => setOwner(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition"
+                className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition text-sm"
+                required
               />
             </div>
 
@@ -65,7 +92,8 @@ const ProviderProfile = () => {
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition"
+                className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition text-sm"
+                required
               />
             </div>
           </KSCard>
@@ -74,26 +102,17 @@ const ProviderProfile = () => {
           <KSCard className="space-y-4">
             <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
               <Tractor className="text-yellow-600" size={20} />
-              Service Logistics
+              Machinery Capabilities & Details
             </h3>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Base Hub Address</label>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Service Range (Radius in KMs)</label>
-              <input
-                type="number"
-                value={range}
-                onChange={(e) => setRange(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition"
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Fleet details, models, and service range</label>
+              <textarea
+                value={extraInfo}
+                onChange={(e) => setExtraInfo(e.target.value)}
+                placeholder="Enter tractor/harvester models, plate numbers, and typical daily availability."
+                rows={4}
+                className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition text-sm"
               />
             </div>
 
@@ -107,8 +126,8 @@ const ProviderProfile = () => {
         </div>
 
         <div className="flex justify-end">
-          <KSButton type="submit" className="bg-yellow-500 hover:bg-yellow-600 text-slate-900 font-bold border-0 px-8">
-            Save Business Profile
+          <KSButton type="submit" disabled={submitting} className="bg-yellow-500 hover:bg-yellow-600 text-slate-900 font-bold border-0 px-8">
+            {submitting ? "Saving..." : "Save Business Profile"}
           </KSButton>
         </div>
       </form>

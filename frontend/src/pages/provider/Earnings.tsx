@@ -1,14 +1,64 @@
+import React, { useState, useEffect } from "react";
 import { IndianRupee, ArrowUpRight, TrendingUp, Calendar, CreditCard } from "lucide-react";
 import { KSCard, KSBadge } from "../../components/ui";
+import API from "../../services/api";
 
-const earningsHistory = [
-  { id: "TXN-8271", date: "July 08, 2026", job: "Tractor Tilling", customer: "Suresh Reddy", amount: "₹4,500", status: "paid" },
-  { id: "TXN-7982", date: "July 02, 2026", job: "Paddy Harvesting", customer: "Lakshmi Devi", amount: "₹12,000", status: "paid" },
-  { id: "TXN-7654", date: "June 25, 2026", job: "Drone Spraying", customer: "Ramesh Kumar", amount: "₹1,200", status: "paid" },
-  { id: "TXN-7123", date: "June 18, 2026", job: "Transport Truck", customer: "Venkat Rao", amount: "₹3,000", status: "processing" },
-];
+interface Booking {
+  id: number;
+  farmer_name: string;
+  service_name: string;
+  booking_date: string;
+  hours_required: string;
+  total_price: string;
+  status: string;
+}
 
 const Earnings = () => {
+  const [completedJobs, setCompletedJobs] = useState<Booking[]>([]);
+  const [confirmedJobs, setConfirmedJobs] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchEarningsData = async () => {
+      try {
+        const res = await API.get("/bookings/provider");
+        const allBookings = res.data.bookings as Booking[];
+        setCompletedJobs(allBookings.filter(b => b.status === "completed"));
+        setConfirmedJobs(allBookings.filter(b => b.status === "confirmed"));
+      } catch (err: any) {
+        console.error("Error loading earnings data", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchEarningsData();
+  }, []);
+
+  const totalEarnings = completedJobs.reduce((sum, b) => sum + parseFloat(b.total_price), 0);
+  const paidToAccount = totalEarnings * 0.95; // 5% platform fee deduction
+  const pendingEarnings = confirmedJobs.reduce((sum, b) => sum + parseFloat(b.total_price), 0);
+
+  const formatSQLDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-700"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <div>
@@ -20,10 +70,10 @@ const Earnings = () => {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <KSCard className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-slate-400">Total Earnings</p>
-            <h3 className="text-3xl font-bold text-slate-800 mt-1">₹92,400</h3>
+            <p className="text-sm font-semibold text-slate-400">Total Revenue</p>
+            <h3 className="text-3xl font-bold text-slate-800 mt-1">₹{totalEarnings.toLocaleString("en-IN")}</h3>
             <span className="text-xs font-semibold text-green-700 mt-2 flex items-center gap-1">
-              <TrendingUp size={14} /> +12.4% from last month
+              <TrendingUp size={14} /> Direct booking revenue
             </span>
           </div>
           <div className="p-4 bg-green-50 text-green-700 rounded-2xl">
@@ -33,10 +83,10 @@ const Earnings = () => {
 
         <KSCard className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-slate-400">Paid to Account</p>
-            <h3 className="text-3xl font-bold text-slate-800 mt-1">₹89,400</h3>
+            <p className="text-sm font-semibold text-slate-400">Paid to Account (95%)</p>
+            <h3 className="text-3xl font-bold text-slate-800 mt-1">₹{paidToAccount.toLocaleString("en-IN")}</h3>
             <span className="text-xs font-semibold text-slate-400 mt-2 flex items-center gap-1">
-              <Calendar size={14} /> Last payout: July 08
+              <Calendar size={14} /> Less 5% KisanSeeva platform fee
             </span>
           </div>
           <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl">
@@ -46,10 +96,10 @@ const Earnings = () => {
 
         <KSCard className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-slate-400">Processing / Pending</p>
-            <h3 className="text-3xl font-bold text-slate-800 mt-1">₹3,000</h3>
+            <p className="text-sm font-semibold text-slate-400">Confirmed / In-Progress</p>
+            <h3 className="text-3xl font-bold text-slate-800 mt-1">₹{pendingEarnings.toLocaleString("en-IN")}</h3>
             <span className="text-xs font-semibold text-yellow-600 mt-2 flex items-center gap-1">
-              <CreditCard size={14} /> Depositing soon
+              <CreditCard size={14} /> Escrowed in platform
             </span>
           </div>
           <div className="p-4 bg-yellow-50 text-yellow-600 rounded-2xl">
@@ -61,38 +111,44 @@ const Earnings = () => {
       {/* Transaction History Table */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-lg overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800">Transaction History</h3>
+          <h3 className="text-lg font-bold text-slate-800">Job Payout History</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-400 font-semibold text-sm">
-                <th className="px-6 py-4">Transaction ID</th>
-                <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Job Type</th>
-                <th className="px-6 py-4">Farmer</th>
-                <th className="px-6 py-4">Amount</th>
-                <th className="px-6 py-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-600">
-              {earningsHistory.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50/50 transition">
-                  <td className="px-6 py-4 font-bold text-slate-800">{t.id}</td>
-                  <td className="px-6 py-4 text-sm">{t.date}</td>
-                  <td className="px-6 py-4 font-semibold text-slate-700">{t.job}</td>
-                  <td className="px-6 py-4">{t.customer}</td>
-                  <td className="px-6 py-4 font-bold text-slate-800">{t.amount}</td>
-                  <td className="px-6 py-4">
-                    <KSBadge variant={t.status === "paid" ? "success" : "warning"}>
-                      <span className="capitalize">{t.status}</span>
-                    </KSBadge>
-                  </td>
+        {completedJobs.length === 0 ? (
+          <div className="p-8 text-center text-slate-400">
+            No payout transactions found. Earnings appear once jobs are marked completed.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-400 font-semibold text-sm">
+                  <th className="px-6 py-4">Transaction ID</th>
+                  <th className="px-6 py-4">Date</th>
+                  <th className="px-6 py-4">Job Type</th>
+                  <th className="px-6 py-4">Farmer</th>
+                  <th className="px-6 py-4">Amount</th>
+                  <th className="px-6 py-4">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-600">
+                {completedJobs.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-50/50 transition">
+                    <td className="px-6 py-4 font-bold text-slate-800">TXN-{t.id}</td>
+                    <td className="px-6 py-4 text-sm">{formatSQLDate(t.booking_date)}</td>
+                    <td className="px-6 py-4 font-semibold text-slate-700">{t.service_name}</td>
+                    <td className="px-6 py-4">{t.farmer_name}</td>
+                    <td className="px-6 py-4 font-bold text-slate-800">₹{parseFloat(t.total_price).toLocaleString("en-IN")}</td>
+                    <td className="px-6 py-4">
+                      <KSBadge variant="success">
+                        <span>Paid</span>
+                      </KSBadge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

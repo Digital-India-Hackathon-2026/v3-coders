@@ -1,19 +1,78 @@
+import { useState, useEffect } from "react";
 import { Users, Tractor, CalendarCheck, IndianRupee, Bell, AlertTriangle } from "lucide-react";
 import { KSCard, KSBadge } from "../../components/ui";
+import API from "../../services/api";
+
+interface Stats {
+  totalFarmers: number;
+  totalProviders: number;
+  totalBookings: number;
+  totalRevenue: number;
+}
+
+interface RecentBooking {
+  id: number;
+  farmer_name: string;
+  service_name: string;
+  status: string;
+  created_at: string;
+}
 
 const AdminDashboard = () => {
-  const stats = [
-    { title: "Total Farmers Registered", value: "2,548", icon: <Users className="text-blue-500" size={24} />, bg: "bg-blue-950/40 border border-blue-500/20" },
-    { title: "Active Service Providers", value: "512", icon: <Tractor className="text-yellow-500" size={24} />, bg: "bg-yellow-950/40 border border-yellow-500/20" },
-    { title: "Total Bookings Managed", value: "15,842", icon: <CalendarCheck className="text-green-500" size={24} />, bg: "bg-green-950/40 border border-green-500/20" },
-    { title: "Platform Commission Revenue", value: "₹2,48,500", icon: <IndianRupee className="text-purple-500" size={24} />, bg: "bg-purple-950/40 border border-purple-500/20" },
+  const [stats, setStats] = useState<Stats>({
+    totalFarmers: 0,
+    totalProviders: 0,
+    totalBookings: 0,
+    totalRevenue: 0,
+  });
+  const [recentBookings, setRecentBookings] = useState<RecentBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchAdminStats = async () => {
+      try {
+        const res = await API.get("/admin/stats");
+        setStats(res.data.stats);
+        setRecentBookings(res.data.recentBookings);
+      } catch (err: any) {
+        console.error("Error loading admin stats", err);
+        setError("Failed to fetch system overview analytics.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAdminStats();
+  }, []);
+
+  const statsCards = [
+    { title: "Total Farmers Registered", value: stats.totalFarmers.toLocaleString("en-IN"), icon: <Users className="text-blue-500" size={24} />, bg: "bg-blue-950/40 border border-blue-500/20" },
+    { title: "Active Service Providers", value: stats.totalProviders.toLocaleString("en-IN"), icon: <Tractor className="text-yellow-500" size={24} />, bg: "bg-yellow-950/40 border border-yellow-500/20" },
+    { title: "Total Bookings Managed", value: stats.totalBookings.toLocaleString("en-IN"), icon: <CalendarCheck className="text-green-500" size={24} />, bg: "bg-green-950/40 border border-green-500/20" },
+    { title: "Platform Volume", value: `₹${stats.totalRevenue.toLocaleString("en-IN")}`, icon: <IndianRupee className="text-purple-500" size={24} />, bg: "bg-purple-950/40 border border-purple-500/20" },
   ];
 
-  const recentLogs = [
-    { type: "user_reg", text: "New farmer 'Srinivas Rao' registered from Karimnagar", time: "5 mins ago" },
-    { type: "booking", text: "Booking KS-9082 accepted by Balaji Agri Services", time: "12 mins ago" },
-    { type: "provider_verify", text: "Provider 'Jai Kissan Services' submitted document proof", time: "45 mins ago" },
-  ];
+  const formatTime = (isoString: string) => {
+    try {
+      const diffMs = Date.now() - new Date(isoString).getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return "Just now";
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      return new Date(isoString).toLocaleDateString();
+    } catch {
+      return "Recent";
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -23,9 +82,15 @@ const AdminDashboard = () => {
         <p className="text-slate-400 mt-1">Platform analytics, registration flows and critical queues.</p>
       </div>
 
+      {error && (
+        <div className="bg-red-950/20 border border-red-500/35 text-red-400 p-4 rounded-2xl text-sm">
+          {error}
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat) => (
+        {statsCards.map((stat) => (
           <div key={stat.title} className={`p-6 rounded-3xl ${stat.bg} flex items-center justify-between`}>
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{stat.title}</p>
@@ -63,22 +128,30 @@ const AdminDashboard = () => {
           <div>
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               <Bell className="text-red-500" size={20} />
-              System Alerts & Activity
+              Recent Booking Actions
             </h3>
-            <div className="space-y-4">
-              {recentLogs.map((log, i) => (
-                <div key={i} className="flex justify-between items-start gap-4 text-sm border-b border-slate-850 pb-3 last:border-0">
-                  <p className="text-slate-350">{log.text}</p>
-                  <span className="text-xs font-medium text-slate-500 shrink-0">{log.time}</span>
-                </div>
-              ))}
-            </div>
+            {recentBookings.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-sm">
+                No recent booking activities.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {recentBookings.map((log) => (
+                  <div key={log.id} className="flex justify-between items-start gap-4 text-sm border-b border-slate-800 pb-3 last:border-0">
+                    <p className="text-slate-300">
+                      Farmer <strong className="text-white">{log.farmer_name}</strong> requested <strong className="text-white">{log.service_name}</strong> (KS-{log.id}). status: <span className="text-yellow-500 font-semibold">{log.status}</span>
+                    </p>
+                    <span className="text-xs font-medium text-slate-500 shrink-0">{formatTime(log.created_at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           
           <div className="bg-yellow-950/20 border border-yellow-500/20 rounded-2xl p-4 flex items-start gap-3 mt-4">
             <AlertTriangle className="text-yellow-500 shrink-0 mt-0.5" size={18} />
             <p className="text-xs text-yellow-500/80 leading-relaxed">
-              3 new provider registration applications require business license verification.
+              Ensure regular review of disputes. Suspended users won't be allowed to login to prevent abuse.
             </p>
           </div>
         </div>

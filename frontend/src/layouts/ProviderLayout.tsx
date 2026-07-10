@@ -1,12 +1,22 @@
-import { Link, NavLink, useNavigate, Outlet } from "react-router-dom";
+import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
 import { LayoutDashboard, Shield, CalendarRange, User, LogOut, Bell, Menu, Tractor, DollarSign } from "lucide-react";
 import { useState } from "react";
-import { KSButton, KSBadge } from "../components/ui";
+import { useAuth } from "../context/AuthContext";
+import NotificationDropdown from "../components/ui/NotificationDropdown";
 
 const ProviderLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
   const navigate = useNavigate();
+  const { user, loading, logout } = useAuth();
+
+  if (!loading && !user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!loading && user?.role !== "provider") {
+    return <Navigate to="/login" replace />;
+  }
 
   const menuItems = [
     { name: "Dashboard", path: "/provider", icon: <LayoutDashboard size={20} /> },
@@ -15,6 +25,22 @@ const ProviderLayout = () => {
     { name: "My Earnings", path: "/provider/earnings", icon: <DollarSign size={20} /> },
     { name: "Business Profile", path: "/provider/profile", icon: <User size={20} /> },
   ];
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+  };
+
+  const userInitials = user ? getInitials(user.name) : "P";
 
   return (
     <div className="min-h-screen flex bg-slate-50">
@@ -58,7 +84,7 @@ const ProviderLayout = () => {
         {/* Sidebar Footer */}
         <div className="p-4 border-t border-slate-100">
           <button
-            onClick={() => navigate("/")}
+            onClick={handleLogout}
             className="flex items-center gap-4 px-4 py-3 rounded-2xl w-full text-red-600 hover:bg-red-50 transition"
           >
             <LogOut size={20} />
@@ -102,18 +128,15 @@ const ProviderLayout = () => {
             </div>
 
             {/* Notification Bell */}
-            <button className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 relative">
-              <Bell size={20} />
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-yellow-500 rounded-full"></span>
-            </button>
+            <NotificationDropdown />
 
             {/* Profile Brief */}
             <div className="flex items-center gap-3 border-l border-slate-100 pl-4">
               <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center font-bold text-slate-850">
-                BA
+                {userInitials}
               </div>
               <div className="hidden md:block text-left">
-                <p className="text-sm font-semibold text-slate-800">Balaji Services</p>
+                <p className="text-sm font-semibold text-slate-800">{user?.name || "Provider"}</p>
                 <p className="text-xs text-slate-400">Owner (Verified)</p>
               </div>
             </div>

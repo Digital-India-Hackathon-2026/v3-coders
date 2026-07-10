@@ -6,14 +6,18 @@ import { Sprout, Tractor, ShieldAlert } from "lucide-react";
 
 type Role = "farmer" | "provider" | "admin";
 
+import { useAuth } from "../../context/AuthContext";
+
 const LoginPage = () => {
   const [role, setRole] = useState<Role>("farmer");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setError("Please fill in all fields");
@@ -21,13 +25,22 @@ const LoginPage = () => {
     }
 
     setError("");
-    // Simulate navigation based on selected role
-    if (role === "farmer") {
-      navigate("/farmer");
-    } else if (role === "provider") {
-      navigate("/provider");
-    } else if (role === "admin") {
-      navigate("/admin");
+    setLoading(true);
+    try {
+      await login(email, password, role);
+      
+      // Navigate to respective dashboard
+      if (role === "farmer") {
+        navigate("/farmer");
+      } else if (role === "provider") {
+        navigate("/provider");
+      } else if (role === "admin") {
+        navigate("/admin");
+      }
+    } catch (err: any) {
+      setError(err.message || "Invalid credentials");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -122,8 +135,8 @@ const LoginPage = () => {
         </div>
 
         {/* Action Button */}
-        <KSButton type="submit" className="w-full py-4 text-center justify-center">
-          Sign In
+        <KSButton type="submit" disabled={loading} className="w-full py-4 text-center justify-center">
+          {loading ? "Signing In..." : "Sign In"}
         </KSButton>
 
         {/* Register Redirection */}

@@ -1,51 +1,133 @@
-import { useState } from "react";
-import { Search, Calendar, Tractor, User, MapPin } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Search, Calendar, Tractor, User, MapPin, RefreshCw, BookOpen } from "lucide-react";
+import API from "../../services/api";
 
-const allSystemBookings = [
-  { id: "KS-9082", service: "Paddy Harvesting", farmer: "Ramesh Kumar", provider: "Balaji Agri Services", date: "July 12, 2026", price: "₹8,000", status: "pending", location: "Warangal" },
-  { id: "KS-8971", service: "Tractor Tilling", farmer: "Rajesh Patil", provider: "Srinivas Equipment", date: "July 08, 2026", price: "₹4,500", status: "completed", location: "Nizamabad" },
-  { id: "KS-8643", service: "Drone Spraying", farmer: "Venkat Reddy", provider: "Smart Farms", date: "June 25, 2026", price: "₹1,200", status: "completed", location: "Karimnagar" },
-  { id: "KS-8531", service: "Transport Truck", farmer: "Ram Lal", provider: "Kalyan Transport", date: "June 18, 2026", price: "₹3,000", status: "cancelled", location: "Medak" },
-];
+interface Booking {
+  id: number;
+  farmer_name: string;
+  farmer_email: string;
+  service_name: string;
+  service_type: string;
+  provider_name: string;
+  booking_date: string;
+  total_price: number;
+  status: string;
+  location: string;
+  created_at: string;
+}
+
+const STATUS_OPTIONS = ["all", "pending", "confirmed", "completed", "cancelled"];
 
 const BookingsPage = () => {
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
 
-  const filtered = allSystemBookings.filter((b) => {
+  const fetchBookings = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await API.get("/admin/bookings");
+      setBookings(res.data.bookings);
+    } catch (err: any) {
+      console.error("Fetch bookings error:", err);
+      setError("Failed to load bookings from the server.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBookings();
+  }, [fetchBookings]);
+
+  const filtered = bookings.filter((b) => {
     const matchesFilter = filter === "all" ? true : b.status === filter;
-    const matchesSearch = b.id.toLowerCase().includes(search.toLowerCase()) ||
-                          b.farmer.toLowerCase().includes(search.toLowerCase()) ||
-                          b.provider.toLowerCase().includes(search.toLowerCase()) ||
-                          b.service.toLowerCase().includes(search.toLowerCase());
+    const term = search.toLowerCase();
+    const matchesSearch =
+      `ks-${b.id}`.includes(term) ||
+      b.farmer_name.toLowerCase().includes(term) ||
+      b.provider_name.toLowerCase().includes(term) ||
+      b.service_name.toLowerCase().includes(term);
     return matchesFilter && matchesSearch;
   });
 
+  const statusCounts = STATUS_OPTIONS.slice(1).reduce((acc, s) => {
+    acc[s] = bookings.filter((b) => b.status === s).length;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "—";
+    return new Date(dateStr).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const statusStyle = (status: string) => {
+    switch (status) {
+      case "completed": return "bg-green-950/40 text-green-500 border-green-500/20";
+      case "confirmed": return "bg-blue-950/40 text-blue-400 border-blue-500/20";
+      case "cancelled": return "bg-red-950/40 text-red-500 border-red-500/20";
+      default: return "bg-yellow-950/40 text-yellow-500 border-yellow-500/20";
+    }
+  };
+
   return (
     <div className="space-y-8 text-slate-100">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">System Bookings</h1>
-          <p className="text-slate-400 mt-1">Global log of all scheduling, transactions, and status states on KisanSeeva.</p>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+            <BookOpen className="text-blue-500" size={28} />
+            System Bookings
+          </h1>
+          <p className="text-slate-400 mt-1">
+            Complete platform log of all bookings, transactions and service statuses.
+          </p>
         </div>
+        <button
+          onClick={fetchBookings}
+          className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white hover:border-slate-600 transition text-sm font-semibold"
+        >
+          <RefreshCw size={15} /> Refresh
+        </button>
+      </div>
 
-        {/* Filter Badges */}
-        <div className="flex gap-2 bg-slate-900 p-1 border border-slate-800 rounded-2xl">
-          {["all", "pending", "completed", "cancelled"].map((item) => (
+      {/* Status Summary Chips */}
+      {!loading && (
+        <div className="flex flex-wrap gap-3">
+          {STATUS_OPTIONS.map((s) => (
             <button
-              key={item}
-              onClick={() => setFilter(item)}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold capitalize transition ${
-                filter === item ? "bg-red-650 text-white shadow-md" : "text-slate-450 hover:text-white"
+              key={s}
+              onClick={() => setFilter(s)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold border transition ${
+                filter === s
+                  ? "bg-red-600 text-white border-red-500"
+                  : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
               }`}
             >
-              {item}
+              <span className="capitalize">{s === "all" ? "All Bookings" : s}</span>
+              {s !== "all" && (
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${filter === s ? "bg-white/20" : "bg-slate-800"}`}>
+                  {statusCounts[s] || 0}
+                </span>
+              )}
+              {s === "all" && (
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${filter === s ? "bg-white/20" : "bg-slate-800"}`}>
+                  {bookings.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
-      </div>
+      )}
 
-      {/* Search Input */}
+      {/* Search */}
       <div className="relative max-w-md">
         <Search className="absolute left-4 top-3.5 text-slate-500" size={18} />
         <input
@@ -57,49 +139,93 @@ const BookingsPage = () => {
         />
       </div>
 
-      {/* Bookings List Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-850 text-slate-400 font-semibold text-sm border-b border-slate-800">
-                <th className="px-6 py-4">Booking ID</th>
-                <th className="px-6 py-4">Service</th>
-                <th className="px-6 py-4">Farmer</th>
-                <th className="px-6 py-4">Provider</th>
-                <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Location</th>
-                <th className="px-6 py-4">Price</th>
-                <th className="px-6 py-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {filtered.map((b) => (
-                <tr key={b.id} className="hover:bg-slate-850/30 transition">
-                  <td className="px-6 py-4 font-bold text-white">{b.id}</td>
-                  <td className="px-6 py-4 font-semibold text-white flex items-center gap-1.5"><Tractor size={14} className="text-slate-500" /> {b.service}</td>
-                  <td className="px-6 py-4"><span className="flex items-center gap-1.5"><User size={14} className="text-slate-500" /> {b.farmer}</span></td>
-                  <td className="px-6 py-4 font-semibold">{b.provider}</td>
-                  <td className="px-6 py-4 text-sm"><span className="flex items-center gap-1.5"><Calendar size={14} className="text-slate-500" /> {b.date}</span></td>
-                  <td className="px-6 py-4 text-sm"><span className="flex items-center gap-1.5"><MapPin size={14} className="text-slate-500" /> {b.location}</span></td>
-                  <td className="px-6 py-4 font-bold text-white">{b.price}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                      b.status === "completed" 
-                        ? "bg-green-950/40 text-green-500 border-green-500/20" 
-                        : b.status === "cancelled"
-                        ? "bg-red-950/40 text-red-500 border-red-500/20"
-                        : "bg-yellow-950/40 text-yellow-500 border-yellow-500/20"
-                    }`}>
-                      <span className="capitalize">{b.status}</span>
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Error */}
+      {error && (
+        <div className="bg-red-950/20 border border-red-500/30 text-red-400 rounded-2xl p-4 text-sm">
+          {error}
         </div>
+      )}
+
+      {/* Bookings Table */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
+        {loading ? (
+          <div className="flex justify-center items-center h-52">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-500" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-16 text-center text-slate-500">
+            <BookOpen size={40} className="mx-auto mb-4 opacity-30" />
+            <p className="font-semibold">No bookings found for selected filters.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="text-slate-400 font-semibold text-sm border-b border-slate-800">
+                  <th className="px-6 py-4">Booking ID</th>
+                  <th className="px-6 py-4">Service</th>
+                  <th className="px-6 py-4">Farmer</th>
+                  <th className="px-6 py-4">Provider</th>
+                  <th className="px-6 py-4">Scheduled Date</th>
+                  <th className="px-6 py-4">Location</th>
+                  <th className="px-6 py-4">Amount</th>
+                  <th className="px-6 py-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {filtered.map((b) => (
+                  <tr key={b.id} className="hover:bg-slate-800/20 transition">
+                    <td className="px-6 py-4 font-bold text-white font-mono text-sm">KS-{b.id}</td>
+                    <td className="px-6 py-4 font-semibold text-white">
+                      <span className="flex items-center gap-1.5">
+                        <Tractor size={14} className="text-slate-500 shrink-0" />
+                        {b.service_name}
+                      </span>
+                      <span className="text-xs text-slate-500 capitalize">{b.service_type}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="flex items-center gap-1.5">
+                        <User size={14} className="text-slate-500 shrink-0" />
+                        <span>
+                          <p className="font-semibold text-white">{b.farmer_name}</p>
+                          <p className="text-xs text-slate-500">{b.farmer_email}</p>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 font-semibold text-white">{b.provider_name}</td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className="flex items-center gap-1.5">
+                        <Calendar size={14} className="text-slate-500" />
+                        {formatDate(b.booking_date)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className="flex items-center gap-1.5">
+                        <MapPin size={14} className="text-slate-500" />
+                        {b.location || "—"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-white">
+                      ₹{b.total_price ? Number(b.total_price).toLocaleString("en-IN") : "—"}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${statusStyle(b.status)}`}>
+                        <span className="capitalize">{b.status}</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
+
+      {!loading && (
+        <p className="text-xs text-slate-600 text-right">
+          Showing {filtered.length} of {bookings.length} bookings
+        </p>
+      )}
     </div>
   );
 };

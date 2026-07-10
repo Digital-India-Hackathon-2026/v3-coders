@@ -1,48 +1,97 @@
+import { useState, useEffect } from "react";
 import { Sprout, Tractor, CloudSun, CheckCircle2, IndianRupee, AlertCircle } from "lucide-react";
 import { KSCard, KSBadge } from "../../components/ui";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import API from "../../services/api";
+import WeatherWidget from "../../components/dashboard/WeatherWidget";
+
+interface Booking {
+  id: number;
+  service_name: string;
+  provider_name: string;
+  booking_date: string;
+  status: "pending" | "confirmed" | "completed" | "cancelled" | "rejected";
+  total_price: string;
+}
 
 const FarmerDashboard = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // Mock weather recommendation
+  // Weather recommendation
   const weather = {
     temp: "32°C",
     condition: "Sunny / Clear",
     recommendation: "Perfect conditions for land preparation and sowing.",
   };
 
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        const res = await API.get("/bookings/farmer");
+        setBookings(res.data.bookings);
+      } catch (err: any) {
+        console.error("Error fetching farmer dashboard data", err);
+        setError("Could not load your dashboard stats. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboardData();
+  }, []);
+
+  // Calculate statistics
+  const activeBookingsCount = bookings.filter(b => b.status === "pending" || b.status === "confirmed").length;
+  const completedCount = bookings.filter(b => b.status === "completed").length;
+  const totalSpent = bookings
+    .filter(b => b.status === "completed")
+    .reduce((sum, b) => sum + parseFloat(b.total_price), 0);
+
   const stats = [
-    { title: "Active Bookings", value: "2", icon: <Tractor className="text-yellow-600" size={24} />, bg: "bg-yellow-50" },
-    { title: "Completed Services", value: "12", icon: <CheckCircle2 className="text-green-700" size={24} />, bg: "bg-green-50" },
-    { title: "Total Spent", value: "₹18,500", icon: <IndianRupee className="text-blue-600" size={24} />, bg: "bg-blue-50" },
+    { title: "Active Bookings", value: activeBookingsCount.toString(), icon: <Tractor className="text-yellow-600" size={24} />, bg: "bg-yellow-50" },
+    { title: "Completed Services", value: completedCount.toString(), icon: <CheckCircle2 className="text-green-700" size={24} />, bg: "bg-green-50" },
+    { title: "Total Spent", value: `₹${totalSpent.toLocaleString("en-IN")}`, icon: <IndianRupee className="text-blue-600" size={24} />, bg: "bg-blue-50" },
   ];
 
-  const recentBookings = [
-    {
-      id: "KS-9082",
-      service: "Paddy Harvesting",
-      provider: "Balaji Agri Services",
-      date: "July 12, 2026",
-      status: "pending",
-      price: "₹8,000",
-    },
-    {
-      id: "KS-8971",
-      service: "Tractor Tilling",
-      provider: "Srinivas Equipment",
-      date: "July 08, 2026",
-      status: "completed",
-      price: "₹4,500",
-    },
-  ];
+  // Find recent 5 bookings
+  const recentBookings = bookings.slice(0, 5);
+
+  // Find any pending booking to show in the alert
+  const pendingBooking = bookings.find(b => b.status === "pending");
+
+  const formatSQLDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-700"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
       {/* Welcome Heading */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Namaste Ramesh ji!</h1>
+          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">
+            Namaste {user?.name ? `${user.name} ji` : "Farmer ji"}!
+          </h1>
           <p className="text-slate-500 mt-1">Here is an overview of your farm services and suggestions.</p>
         </div>
         <button
@@ -52,6 +101,12 @@ const FarmerDashboard = () => {
           🚜 Book New Service
         </button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm border border-red-100">
+          {error}
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid md:grid-cols-3 gap-6">
@@ -68,21 +123,9 @@ const FarmerDashboard = () => {
 
       {/* Weather & Recommendations Widget */}
       <div className="grid lg:grid-cols-3 gap-6">
-        <KSCard className="lg:col-span-2 flex flex-col md:flex-row items-center gap-6 bg-gradient-to-br from-green-500 to-emerald-700 text-white border-0">
-          <div className="flex items-center gap-4 shrink-0">
-            <CloudSun size={60} className="text-yellow-300" />
-            <div>
-              <h4 className="text-4xl font-extrabold">{weather.temp}</h4>
-              <p className="text-green-100 font-semibold">{weather.condition}</p>
-            </div>
-          </div>
-          <div className="border-t md:border-t-0 md:border-l border-white/20 pt-4 md:pt-0 md:pl-6">
-            <span className="bg-white/20 text-white text-xs px-2.5 py-1 rounded-full font-bold uppercase mb-2 inline-block">
-              Farming Advisory
-            </span>
-            <p className="text-lg leading-relaxed font-medium">{weather.recommendation}</p>
-          </div>
-        </KSCard>
+        <div className="lg:col-span-2">
+          <WeatherWidget />
+        </div>
 
         <KSCard className="flex flex-col justify-between">
           <div className="flex items-start gap-3">
@@ -90,7 +133,11 @@ const FarmerDashboard = () => {
             <div>
               <h4 className="font-bold text-slate-800">Booking Alert</h4>
               <p className="text-sm text-slate-500 mt-1">
-                Your booking request KS-9082 is pending approval from the provider.
+                {pendingBooking ? (
+                  `Your booking request KS-${pendingBooking.id} is pending approval from ${pendingBooking.provider_name}.`
+                ) : (
+                  "You have no pending booking requests at the moment."
+                )}
               </p>
             </div>
           </div>
@@ -114,36 +161,52 @@ const FarmerDashboard = () => {
             View All
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-400 font-semibold text-sm">
-                <th className="px-6 py-4">Booking ID</th>
-                <th className="px-6 py-4">Service</th>
-                <th className="px-6 py-4">Provider</th>
-                <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Price</th>
-                <th className="px-6 py-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-600">
-              {recentBookings.map((b) => (
-                <tr key={b.id} className="hover:bg-slate-50/50 transition">
-                  <td className="px-6 py-4 font-bold text-slate-800">{b.id}</td>
-                  <td className="px-6 py-4 font-semibold">{b.service}</td>
-                  <td className="px-6 py-4">{b.provider}</td>
-                  <td className="px-6 py-4 text-sm">{b.date}</td>
-                  <td className="px-6 py-4 font-bold text-slate-800">{b.price}</td>
-                  <td className="px-6 py-4">
-                    <KSBadge variant={b.status === "completed" ? "success" : "warning"}>
-                      {b.status}
-                    </KSBadge>
-                  </td>
+        {recentBookings.length === 0 ? (
+          <div className="p-8 text-center text-slate-400">
+            No bookings found. Get started by booking a service!
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-400 font-semibold text-sm">
+                  <th className="px-6 py-4">Booking ID</th>
+                  <th className="px-6 py-4">Service</th>
+                  <th className="px-6 py-4">Provider</th>
+                  <th className="px-6 py-4">Date</th>
+                  <th className="px-6 py-4">Price</th>
+                  <th className="px-6 py-4">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-600">
+                {recentBookings.map((b) => (
+                  <tr key={b.id} className="hover:bg-slate-50/50 transition">
+                    <td className="px-6 py-4 font-bold text-slate-800">KS-{b.id}</td>
+                    <td className="px-6 py-4 font-semibold">{b.service_name}</td>
+                    <td className="px-6 py-4">{b.provider_name}</td>
+                    <td className="px-6 py-4 text-sm">{formatSQLDate(b.booking_date)}</td>
+                    <td className="px-6 py-4 font-bold text-slate-800">₹{parseFloat(b.total_price).toLocaleString("en-IN")}</td>
+                    <td className="px-6 py-4">
+                      <KSBadge
+                        variant={
+                          b.status === "completed"
+                            ? "success"
+                            : b.status === "pending"
+                            ? "warning"
+                            : b.status === "confirmed"
+                            ? "info"
+                            : "danger"
+                        }
+                      >
+                        {b.status}
+                      </KSBadge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

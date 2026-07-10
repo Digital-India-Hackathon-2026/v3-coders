@@ -1,11 +1,21 @@
-import { Link, NavLink, useNavigate, Outlet } from "react-router-dom";
+import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
 import { LayoutDashboard, CalendarRange, User, LogOut, Bell, Menu, Tractor, Sprout } from "lucide-react";
 import { useState } from "react";
-import { KSButton } from "../components/ui";
+import { useAuth } from "../context/AuthContext";
+import NotificationDropdown from "../components/ui/NotificationDropdown";
 
 const FarmerLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const navigate = useNavigate();
+  const { user, loading, logout } = useAuth();
+
+  if (!loading && !user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!loading && user?.role !== "farmer") {
+    return <Navigate to="/login" replace />;
+  }
 
   const menuItems = [
     { name: "Dashboard", path: "/farmer", icon: <LayoutDashboard size={20} /> },
@@ -13,6 +23,23 @@ const FarmerLayout = () => {
     { name: "My Bookings", path: "/farmer/bookings", icon: <CalendarRange size={20} /> },
     { name: "My Profile", path: "/farmer/profile", icon: <User size={20} /> },
   ];
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+  };
+
+  const userInitials = user ? getInitials(user.name) : "F";
+  const userLocation = user ? user.extraInfo.split(",").pop()?.trim() || "India" : "India";
 
   return (
     <div className="min-h-screen flex bg-slate-50">
@@ -56,7 +83,7 @@ const FarmerLayout = () => {
         {/* Sidebar Footer */}
         <div className="p-4 border-t border-slate-100">
           <button
-            onClick={() => navigate("/")}
+            onClick={handleLogout}
             className="flex items-center gap-4 px-4 py-3 rounded-2xl w-full text-red-600 hover:bg-red-50 transition"
           >
             <LogOut size={20} />
@@ -81,19 +108,16 @@ const FarmerLayout = () => {
 
           <div className="flex items-center gap-4">
             {/* Notification Bell */}
-            <button className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 relative">
-              <Bell size={20} />
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-yellow-500 rounded-full"></span>
-            </button>
+            <NotificationDropdown />
 
             {/* Profile Brief */}
             <div className="flex items-center gap-3 border-l border-slate-100 pl-4">
               <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center font-bold text-green-700">
-                RK
+                {userInitials}
               </div>
               <div className="hidden md:block">
-                <p className="text-sm font-semibold text-slate-800">Ramesh Kumar</p>
-                <p className="text-xs text-slate-400">Warangal</p>
+                <p className="text-sm font-semibold text-slate-800">{user?.name || "Farmer"}</p>
+                <p className="text-xs text-slate-400">{userLocation}</p>
               </div>
             </div>
           </div>
