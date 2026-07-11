@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, Shield, CalendarRange, User, LogOut, Bell, Menu, Tractor, DollarSign, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Shield, CalendarRange, User, LogOut, Bell, Menu, Tractor, DollarSign, BarChart3, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import NotificationDropdown from "../components/ui/NotificationDropdown";
@@ -10,11 +10,19 @@ const ProviderLayout = () => {
   const navigate = useNavigate();
   const { user, loading, logout } = useAuth();
 
-  if (!loading && !user) {
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-green-700" size={40} />
+      </div>
+    );
+  }
+
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  if (!loading && user?.role !== "provider") {
+  if (user?.role !== "provider") {
     return <Navigate to="/login" replace />;
   }
 

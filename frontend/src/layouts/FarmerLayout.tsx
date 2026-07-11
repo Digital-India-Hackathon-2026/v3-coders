@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, CalendarRange, User, LogOut, Bell, Menu, Tractor, Sprout, BarChart3 } from "lucide-react";
+import { LayoutDashboard, CalendarRange, User, LogOut, Bell, Menu, Tractor, Sprout, BarChart3, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import NotificationDropdown from "../components/ui/NotificationDropdown";
@@ -9,11 +9,19 @@ const FarmerLayout = () => {
   const navigate = useNavigate();
   const { user, loading, logout } = useAuth();
 
-  if (!loading && !user) {
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-green-700" size={40} />
+      </div>
+    );
+  }
+
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  if (!loading && user?.role !== "farmer") {
+  if (user?.role !== "farmer") {
     return <Navigate to="/login" replace />;
   }
 

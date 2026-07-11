@@ -27,6 +27,7 @@ const checkRole = (roles) => {
     }
     
     if (!roles.includes(req.user.role)) {
+      console.warn(`checkRole forbidden: user.role is '${req.user.role}', expected one of:`, roles);
       return res.status(403).json({ message: "Access forbidden: insufficient permissions." });
     }
     

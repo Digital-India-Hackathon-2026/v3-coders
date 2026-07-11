@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, Users, UserCog, CalendarRange, PieChart, LogOut, Bell, Menu, Tractor, Settings, BarChart3, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, Users, UserCog, CalendarRange, PieChart, LogOut, Bell, Menu, Tractor, Settings, BarChart3, ShieldAlert, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
@@ -8,11 +8,19 @@ const AdminLayout = () => {
   const navigate = useNavigate();
   const { user, loading, logout } = useAuth();
 
-  if (!loading && !user) {
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+        <Loader2 className="animate-spin text-red-500" size={40} />
+      </div>
+    );
+  }
+
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  if (!loading && user?.role !== "admin") {
+  if (user?.role !== "admin") {
     return <Navigate to="/login" replace />;
   }
 
