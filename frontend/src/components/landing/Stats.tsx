@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Users, Tractor, CalendarCheck2, Star, TrendingUp } from "lucide-react";
+import { Users, Tractor, CalendarCheck2, CheckCircle2, TrendingUp } from "lucide-react";
+import axios from "axios";
 
 function useCountUp(end: number, duration = 2000, decimals = 0, started = false) {
   const [count, setCount] = useState(0);
@@ -8,7 +9,7 @@ function useCountUp(end: number, duration = 2000, decimals = 0, started = false)
   const startTime = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!started) return;
+    if (!started || end === 0) return;
     startTime.current = null;
     const step = (timestamp: number) => {
       if (!startTime.current) startTime.current = timestamp;
@@ -26,14 +27,18 @@ function useCountUp(end: number, duration = 2000, decimals = 0, started = false)
   return count;
 }
 
-const statsData = [
-  { icon: Users, number: 2500, suffix: "+", label: "Farmers Registered", color: "text-blue-500", bg: "bg-blue-50 border-blue-100", trend: "+12% this month" },
-  { icon: Tractor, number: 500, suffix: "+", label: "Verified Providers", color: "text-green-500", bg: "bg-green-50 border-green-100", trend: "+8% this month" },
-  { icon: CalendarCheck2, number: 15000, suffix: "+", label: "Bookings Completed", color: "text-purple-500", bg: "bg-purple-50 border-purple-100", trend: "+23% this month" },
-  { icon: Star, number: 4.8, decimals: 1, suffix: "/5.0", label: "Average Rating", color: "text-yellow-500", bg: "bg-yellow-50 border-yellow-100", trend: "Based on 5,200 reviews" },
-];
+type StatItem = {
+  icon: React.ElementType;
+  number: number;
+  suffix: string;
+  label: string;
+  color: string;
+  bg: string;
+  trend: string;
+  decimals?: number;
+};
 
-function StatCard({ item, index }: { item: typeof statsData[0]; index: number }) {
+function StatCard({ item, index }: { item: StatItem; index: number }) {
   const [ref, setRef] = useState<HTMLDivElement | null>(null);
   const [started, setStarted] = useState(false);
   const count = useCountUp(item.number, 2000, item.decimals ?? 0, started);
@@ -79,6 +84,26 @@ function StatCard({ item, index }: { item: typeof statsData[0]; index: number })
 }
 
 function Stats() {
+  const [liveStats, setLiveStats] = useState({ farmers: 0, providers: 0, bookings: 0, completed: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get("http://localhost:5000/api/admin/public-stats")
+      .then((res) => setLiveStats(res.data))
+      .catch(() => {
+        // fallback to placeholder values if API is unreachable
+        setLiveStats({ farmers: 0, providers: 0, bookings: 0, completed: 0 });
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const statsData: StatItem[] = [
+    { icon: Users, number: liveStats.farmers, suffix: "+", label: "Farmers Registered", color: "text-blue-500", bg: "bg-blue-50 border-blue-100", trend: "Active members" },
+    { icon: Tractor, number: liveStats.providers, suffix: "+", label: "Verified Providers", color: "text-green-500", bg: "bg-green-50 border-green-100", trend: "Trusted service providers" },
+    { icon: CalendarCheck2, number: liveStats.bookings, suffix: "+", label: "Total Bookings", color: "text-purple-500", bg: "bg-purple-50 border-purple-100", trend: "All time bookings" },
+    { icon: CheckCircle2, number: liveStats.completed, suffix: "+", label: "Services Completed", color: "text-yellow-500", bg: "bg-yellow-50 border-yellow-100", trend: "Successfully delivered" },
+  ];
+
   return (
     <section className="py-24 bg-white">
       <div className="max-w-7xl mx-auto px-6">
@@ -94,13 +119,29 @@ function Stats() {
           <h2 className="text-4xl font-extrabold text-slate-800">
             Numbers That Tell Our Story
           </h2>
+          <p className="text-slate-500 mt-2 text-base">
+            Live data — updated in real time as our community grows.
+          </p>
         </motion.div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {statsData.map((item, i) => (
-            <StatCard key={item.label} item={item} index={i} />
-          ))}
-        </div>
+        {loading ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="p-7 rounded-3xl border border-slate-100 bg-white animate-pulse">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 mb-5" />
+                <div className="h-10 w-24 bg-slate-100 rounded-xl mb-2" />
+                <div className="h-4 w-32 bg-slate-100 rounded mb-3" />
+                <div className="h-3 w-28 bg-slate-100 rounded" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {statsData.map((item, i) => (
+              <StatCard key={item.label} item={item} index={i} />
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

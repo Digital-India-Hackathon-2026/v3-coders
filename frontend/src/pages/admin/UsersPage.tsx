@@ -11,30 +11,42 @@ interface User {
   extra_info: Record<string, any> | null;
   status: string;
   created_at: string;
+  documents?: {
+    aadhar?: string;
+    selfie?: string;
+    driving_license?: string;
+  };
 }
 
 const UsersPage = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [pendingUsers, setPendingUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<"farmer" | "provider" | "all">("farmer");
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"active" | "pending">("active");
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const params = roleFilter !== "all" ? { role: roleFilter } : {};
-      const res = await API.get("/admin/users", { params });
-      setUsers(res.data.users);
+      if (activeTab === "active") {
+        const params = roleFilter !== "all" ? { role: roleFilter } : {};
+        const res = await API.get("/admin/users", { params });
+        setUsers(res.data.users);
+      } else {
+        const res = await API.get("/admin/pending-users");
+        setPendingUsers(res.data.users);
+      }
     } catch (err: any) {
       console.error("Fetch users error:", err);
-      setError("Failed to load users. Please check your connection.");
+      setError(`Failed to load ${activeTab} users. Please check your connection.`);
     } finally {
       setLoading(false);
     }
-  }, [roleFilter]);
+  }, [roleFilter, activeTab]);
 
   useEffect(() => {
     fetchUsers();
@@ -56,7 +68,32 @@ const UsersPage = () => {
     }
   };
 
-  const filteredUsers = users.filter((u) => {
+  const handleApprove = async (id: number) => {
+    setTogglingId(id);
+    try {
+      await API.put(`/admin/users/${id}/approve`);
+      setPendingUsers((prev) => prev.filter((u) => u.id !== id));
+    } catch (err: any) {
+      alert(`Error: ${err.response?.data?.message || "Failed to approve user."}`);
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const handleReject = async (id: number) => {
+    if (!window.confirm("Are you sure you want to reject this user?")) return;
+    setTogglingId(id);
+    try {
+      await API.put(`/admin/users/${id}/reject`);
+      setPendingUsers((prev) => prev.filter((u) => u.id !== id));
+    } catch (err: any) {
+      alert(`Error: ${err.response?.data?.message || "Failed to reject user."}`);
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const filteredUsers = (activeTab === "active" ? users : pendingUsers).filter((u) => {
     const term = searchTerm.toLowerCase();
     return (
       u.name.toLowerCase().includes(term) ||
@@ -96,22 +133,44 @@ const UsersPage = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Role Filter */}
-          <div className="flex gap-1 bg-slate-900 p-1 border border-slate-800 rounded-2xl">
-            {(["farmer", "provider", "all"] as const).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRoleFilter(r)}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold capitalize transition ${
-                  roleFilter === r
-                    ? "bg-red-600 text-white shadow"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                {r === "all" ? "All Users" : r === "farmer" ? "Farmers" : "Providers"}
-              </button>
-            ))}
+          {/* Tabs */}
+          <div className="flex gap-1 bg-slate-900 p-1 border border-slate-800 rounded-2xl mr-4">
+            <button
+              onClick={() => setActiveTab("active")}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold capitalize transition ${
+                activeTab === "active" ? "bg-red-600 text-white shadow" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Active Users
+            </button>
+            <button
+              onClick={() => setActiveTab("pending")}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold capitalize transition ${
+                activeTab === "pending" ? "bg-amber-500 text-white shadow" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Pending Approvals
+            </button>
           </div>
+
+          {/* Role Filter (only for active users) */}
+          {activeTab === "active" && (
+            <div className="flex gap-1 bg-slate-900 p-1 border border-slate-800 rounded-2xl">
+              {(["farmer", "provider", "all"] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRoleFilter(r)}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold capitalize transition ${
+                    roleFilter === r
+                      ? "bg-slate-700 text-white shadow"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {r === "all" ? "All" : r === "farmer" ? "Farmers" : "Providers"}
+                </button>
+              ))}
+            </div>
+          )}
 
           <button
             onClick={fetchUsers}
@@ -166,6 +225,7 @@ const UsersPage = () => {
                   <th className="px-6 py-4">Details</th>
                   <th className="px-6 py-4">Joined</th>
                   <th className="px-6 py-4">Status</th>
+                  {activeTab === "pending" && <th className="px-6 py-4">Documents</th>}
                   <th className="px-6 py-4 text-right">Action</th>
                 </tr>
               </thead>
@@ -203,33 +263,67 @@ const UsersPage = () => {
                       {new Date(u.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border capitalize ${
                         u.status === "active"
                           ? "bg-green-950/40 text-green-500 border-green-500/20"
+                          : u.status === "pending"
+                          ? "bg-amber-950/40 text-amber-500 border-amber-500/20"
                           : "bg-red-950/40 text-red-500 border-red-500/20"
                       }`}>
-                        <span className="capitalize">{u.status}</span>
+                        {u.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => toggleStatus(u)}
-                        disabled={togglingId === u.id}
-                        title={u.status === "active" ? "Suspend User" : "Reactivate User"}
-                        className={`p-2 rounded-xl transition disabled:opacity-50 ${
-                          u.status === "active"
-                            ? "bg-red-950/30 hover:bg-red-950/60 text-red-500 border border-red-500/20"
-                            : "bg-green-950/30 hover:bg-green-950/60 text-green-500 border border-green-500/20"
-                        }`}
-                      >
-                        {togglingId === u.id ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b border-current" />
-                        ) : u.status === "active" ? (
-                          <UserX size={16} />
+                    {activeTab === "pending" && (
+                      <td className="px-6 py-4 text-xs">
+                        {u.documents ? (
+                          <div className="flex flex-col gap-1">
+                            {u.documents.aadhar && <a href={u.documents.aadhar} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Aadhaar</a>}
+                            {u.documents.selfie && <a href={u.documents.selfie} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Selfie</a>}
+                            {u.documents.driving_license && <a href={u.documents.driving_license} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">License</a>}
+                          </div>
                         ) : (
-                          <UserCheck size={16} />
+                          <span className="text-slate-500">No docs</span>
                         )}
-                      </button>
+                      </td>
+                    )}
+                    <td className="px-6 py-4 text-right">
+                      {activeTab === "active" ? (
+                        <button
+                          onClick={() => toggleStatus(u)}
+                          disabled={togglingId === u.id}
+                          title={u.status === "active" ? "Suspend User" : "Reactivate User"}
+                          className={`p-2 rounded-xl transition disabled:opacity-50 ${
+                            u.status === "active"
+                              ? "bg-red-950/30 hover:bg-red-950/60 text-red-500 border border-red-500/20"
+                              : "bg-green-950/30 hover:bg-green-950/60 text-green-500 border border-green-500/20"
+                          }`}
+                        >
+                          {togglingId === u.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b border-current" />
+                          ) : u.status === "active" ? (
+                            <UserX size={16} />
+                          ) : (
+                            <UserCheck size={16} />
+                          )}
+                        </button>
+                      ) : (
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => handleApprove(u.id)}
+                            disabled={togglingId === u.id}
+                            className="px-3 py-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold rounded-lg transition disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleReject(u.id)}
+                            disabled={togglingId === u.id}
+                            className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg transition disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

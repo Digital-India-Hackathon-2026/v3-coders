@@ -1,10 +1,13 @@
-import React, { useEffect, useState, useRef } from "react";
-import { APIProvider, Map, AdvancedMarker, Pin, InfoWindow } from "@vis.gl/react-google-maps";
-import { X, Navigation, LocateFixed, MapPin } from "lucide-react";
+import React, { useEffect, useState, useCallback } from "react";
+import { APIProvider, Map, useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
+import { X, Navigation, LocateFixed, MapPin, Loader } from "lucide-react";
 import API from "../../services/api";
 import { KSButton } from "../ui";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
+const GOOGLE_MAPS_MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string || "DEMO_MAP_ID";
+
+interface LatLng { lat: number; lng: number; }
 
 interface Props {
   isOpen: boolean;
@@ -13,15 +16,117 @@ interface Props {
   role: "farmer" | "provider";
 }
 
+// Inner component that has access to the map instance
+const MapMarkers: React.FC<{
+  farmLocation: LatLng | null;
+  providerLocation: LatLng | null;
+  userLocation: LatLng | null;
+}> = ({ farmLocation, providerLocation, userLocation }) => {
+  const map = useMap();
+  const markerLib = useMapsLibrary("marker");
+
+  useEffect(() => {
+    if (!map || !markerLib) return;
+    const { AdvancedMarkerElement } = markerLib as any;
+    if (!AdvancedMarkerElement) return;
+
+    const markers: any[] = [];
+
+    // Farm marker — green with 🌾
+    if (farmLocation) {
+      const el = document.createElement("div");
+      el.style.cssText = `
+        background: #16a34a; color: white; font-size: 22px;
+        border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+        width: 44px; height: 44px; display: flex; align-items: center;
+        justify-content: center; border: 3px solid #15803d;
+        box-shadow: 0 4px 12px rgba(22,163,74,0.5);
+        cursor: pointer;
+      `;
+      const inner = document.createElement("span");
+      inner.style.transform = "rotate(45deg)";
+      inner.textContent = "🌾";
+      el.appendChild(inner);
+
+      const m = new AdvancedMarkerElement({ map, position: farmLocation, content: el, title: "Farm Location" });
+      markers.push(m);
+    }
+
+    // Provider / tractor marker — blue with 🚜
+    if (providerLocation) {
+      const el = document.createElement("div");
+      el.style.cssText = `
+        background: #2563eb; color: white; font-size: 22px;
+        border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+        width: 44px; height: 44px; display: flex; align-items: center;
+        justify-content: center; border: 3px solid #1d4ed8;
+        box-shadow: 0 4px 12px rgba(37,99,235,0.5);
+        cursor: pointer;
+      `;
+      const inner = document.createElement("span");
+      inner.style.transform = "rotate(45deg)";
+      inner.textContent = "🚜";
+      el.appendChild(inner);
+
+      const m = new AdvancedMarkerElement({ map, position: providerLocation, content: el, title: "Service Provider" });
+      markers.push(m);
+    }
+
+    // User's current position marker — pulsing blue dot
+    if (userLocation && !providerLocation) {
+      const el = document.createElement("div");
+      el.style.cssText = `
+        width: 20px; height: 20px; border-radius: 50%;
+        background: #3b82f6; border: 3px solid white;
+        box-shadow: 0 0 0 6px rgba(59,130,246,0.25);
+        animation: pulse 2s infinite;
+      `;
+      const m = new AdvancedMarkerElement({ map, position: userLocation, content: el, title: "Your Location" });
+      markers.push(m);
+    }
+
+    return () => markers.forEach(m => { m.map = null; });
+  }, [map, markerLib, farmLocation, providerLocation, userLocation]);
+
+  // Pan & zoom to most relevant location
+  useEffect(() => {
+    if (!map) return;
+    const target = providerLocation || farmLocation || userLocation;
+    if (target) {
+      map.panTo(target);
+      map.setZoom(18);
+    }
+  }, [map, farmLocation, providerLocation, userLocation]);
+
+  return null;
+};
+
 const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }) => {
-  const [farmLocation, setFarmLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [providerLocation, setProviderLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [farmLocation, setFarmLocation] = useState<LatLng | null>(null);
+  const [providerLocation, setProviderLocation] = useState<LatLng | null>(null);
+  const [userLocation, setUserLocation] = useState<LatLng | null>(null);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [watchId, setWatchId] = useState<number | null>(null);
   const [error, setError] = useState("");
-  const [openInfo, setOpenInfo] = useState<"farm" | "provider" | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [mapError, setMapError] = useState(false);
 
-  const fetchLocations = async () => {
+  // Get user's current location on open
+  useEffect(() => {
+    if (isOpen && navigator.geolocation) {
+      setGpsLoading(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setGpsLoading(false);
+        },
+        () => setGpsLoading(false),
+        { enableHighAccuracy: true }
+      );
+    }
+  }, [isOpen]);
+
+  const fetchLocations = useCallback(async () => {
     try {
       const res = await API.get(`/bookings/${bookingId}/location`);
       const data = res.data.locationData;
@@ -32,10 +137,9 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
         setProviderLocation({ lat: parseFloat(data.provider_lat), lng: parseFloat(data.provider_lng) });
       }
     } catch (err) {
-      console.error("Failed to fetch location", err);
       setError("Could not load tracking data.");
     }
-  };
+  }, [bookingId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -46,65 +150,68 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
         setWatchId(null);
         setIsBroadcasting(false);
       }
+      setFarmLocation(null);
+      setProviderLocation(null);
+      setUserLocation(null);
+      setError("");
     }
-  }, [isOpen, bookingId]);
+  }, [isOpen]);
 
-  // Farmer polls every 10 seconds
+  // Farmer polls provider location every 10 seconds
   useEffect(() => {
-    let interval: any;
-    if (isOpen && role === "farmer") {
-      interval = setInterval(fetchLocations, 10000);
-    }
+    if (!isOpen || role !== "farmer") return;
+    const interval = setInterval(fetchLocations, 10000);
     return () => clearInterval(interval);
-  }, [isOpen, role]);
+  }, [isOpen, role, fetchLocations]);
 
   const toggleBroadcast = () => {
     if (isBroadcasting && watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
       setWatchId(null);
       setIsBroadcasting(false);
-    } else {
-      if (!navigator.geolocation) {
-        setError("Geolocation is not supported by your browser.");
-        return;
-      }
-      const id = navigator.geolocation.watchPosition(
-        async (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          setProviderLocation({ lat, lng });
-          try {
-            await API.put(`/bookings/${bookingId}/location`, { lat, lng });
-          } catch (err) {
-            console.error("Failed to broadcast location", err);
-          }
-        },
-        () => {
-          setError("Failed to access GPS. Please allow location permissions.");
-          setIsBroadcasting(false);
-        },
-        { enableHighAccuracy: true, maximumAge: 0 }
-      );
-      setWatchId(id);
-      setIsBroadcasting(true);
-      setError("");
+      return;
     }
+    if (!navigator.geolocation) {
+      setError("Geolocation not supported by your browser.");
+      return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setProviderLocation({ lat, lng });
+        setUserLocation({ lat, lng });
+        try {
+          await API.put(`/bookings/${bookingId}/location`, { lat, lng });
+        } catch {
+          console.error("Failed to push location to server");
+        }
+      },
+      () => {
+        setError("GPS access denied. Please allow location permissions.");
+        setIsBroadcasting(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 0 }
+    );
+    setWatchId(id);
+    setIsBroadcasting(true);
+    setError("");
   };
 
   if (!isOpen) return null;
 
-  const defaultCenter = { lat: 20.5937, lng: 78.9629 }; // Center of India
-  const mapCenter = providerLocation || farmLocation || defaultCenter;
-  const mapZoom = farmLocation || providerLocation ? 14 : 5;
+  const defaultCenter = { lat: 20.5937, lng: 78.9629 }; // India fallback
+  const initialCenter = userLocation || farmLocation || providerLocation || defaultCenter;
+  const initialZoom = userLocation || farmLocation || providerLocation ? 18 : 5;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col" style={{ height: "85vh" }}>
-        
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+      <div className="bg-white rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col" style={{ height: "88vh" }}>
+
         {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-white">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-xl ${role === "provider" ? "bg-blue-100 text-blue-600" : "bg-green-100 text-green-700"}`}>
+            <div className={`p-2.5 rounded-xl ${role === "provider" ? "bg-blue-100 text-blue-600" : "bg-green-100 text-green-700"}`}>
               <Navigation size={20} />
             </div>
             <div>
@@ -114,34 +221,27 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
               <p className="text-xs text-slate-400 font-medium">Booking ID: KS-{bookingId}</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
-          >
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        {/* Status bar */}
-        <div className={`px-6 py-2 text-xs font-semibold flex items-center gap-2 ${
-          isBroadcasting 
-            ? "bg-blue-50 text-blue-700 border-b border-blue-100" 
+        {/* Status Bar */}
+        <div className={`px-6 py-2.5 text-xs font-semibold flex items-center gap-2 border-b ${
+          isBroadcasting
+            ? "bg-blue-50 text-blue-700 border-blue-100"
             : providerLocation && role === "farmer"
-            ? "bg-green-50 text-green-700 border-b border-green-100"
-            : "bg-slate-50 text-slate-500 border-b border-slate-100"
+            ? "bg-green-50 text-green-700 border-green-100"
+            : "bg-amber-50 text-amber-700 border-amber-100"
         }`}>
           {role === "provider" ? (
-            isBroadcasting ? (
-              <><span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse inline-block" /> Broadcasting your location to the farmer in real-time</>
-            ) : (
-              <><MapPin size={14} /> Click "Start Journey" below to begin sharing your GPS location with the farmer</>
-            )
+            isBroadcasting
+              ? <><span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse inline-block" /> Live — broadcasting your GPS to the farmer every few seconds</>
+              : <><MapPin size={13} /> Press "Start Journey" to begin sharing your real-time location with the farmer</>
           ) : (
-            providerLocation ? (
-              <><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" /> Provider is en route — map refreshes every 10 seconds</>
-            ) : (
-              <><MapPin size={14} /> Waiting for provider to start sharing their location...</>
-            )
+            providerLocation
+              ? <><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" /> Provider is en route — map auto‑refreshes every 10 s</>
+              : <><MapPin size={13} /> Waiting for provider to start their journey and share location...</>
           )}
         </div>
 
@@ -153,98 +253,66 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
 
         {/* Map */}
         <div className="flex-1 relative">
-          <APIProvider apiKey={GOOGLE_MAPS_KEY}>
-            <Map
-              defaultCenter={mapCenter}
-              defaultZoom={mapZoom}
-              mapId="kisanseeva-tracking-map"
-              gestureHandling="greedy"
-              disableDefaultUI={false}
-              style={{ width: "100%", height: "100%" }}
-            >
-              {/* Farm Marker */}
-              {farmLocation && (
-                <>
-                  <AdvancedMarker
-                    position={farmLocation}
-                    onClick={() => setOpenInfo(openInfo === "farm" ? null : "farm")}
-                    title="Farm Location"
-                  >
-                    <Pin
-                      background="#16a34a"
-                      borderColor="#15803d"
-                      glyphColor="#ffffff"
-                      glyph="🌾"
-                      scale={1.3}
-                    />
-                  </AdvancedMarker>
-                  {openInfo === "farm" && (
-                    <InfoWindow position={farmLocation} onCloseClick={() => setOpenInfo(null)}>
-                      <div className="p-1 text-sm">
-                        <p className="font-bold text-green-700">🌾 Farm Destination</p>
-                        <p className="text-slate-500 text-xs mt-1">Service location for this booking</p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {farmLocation.lat.toFixed(5)}, {farmLocation.lng.toFixed(5)}
-                        </p>
-                      </div>
-                    </InfoWindow>
-                  )}
-                </>
-              )}
-
-              {/* Provider / Tractor Marker */}
-              {providerLocation && (
-                <>
-                  <AdvancedMarker
-                    position={providerLocation}
-                    onClick={() => setOpenInfo(openInfo === "provider" ? null : "provider")}
-                    title="Service Provider"
-                  >
-                    <Pin
-                      background="#2563eb"
-                      borderColor="#1d4ed8"
-                      glyphColor="#ffffff"
-                      glyph="🚜"
-                      scale={1.3}
-                    />
-                  </AdvancedMarker>
-                  {openInfo === "provider" && (
-                    <InfoWindow position={providerLocation} onCloseClick={() => setOpenInfo(null)}>
-                      <div className="p-1 text-sm">
-                        <p className="font-bold text-blue-700">🚜 Service Provider</p>
-                        <p className="text-slate-500 text-xs mt-1">
-                          {role === "provider" ? "Your current position" : "Live position (refreshes every 10s)"}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {providerLocation.lat.toFixed(5)}, {providerLocation.lng.toFixed(5)}
-                        </p>
-                      </div>
-                    </InfoWindow>
-                  )}
-                </>
-              )}
-
-              {/* If no locations yet, show user's current location */}
-              {!farmLocation && !providerLocation && (
-                <AdvancedMarker position={defaultCenter}>
-                  <Pin background="#94a3b8" borderColor="#64748b" glyphColor="#fff" glyph="📍" scale={1.2} />
-                </AdvancedMarker>
-              )}
-            </Map>
+          {gpsLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-3 text-slate-500">
+                <Loader className="animate-spin" size={32} />
+                <p className="text-sm font-semibold">Getting your current location…</p>
+              </div>
+            </div>
+          )}
+          <APIProvider
+            apiKey={GOOGLE_MAPS_KEY}
+            onLoad={() => setMapError(false)}
+            onError={() => setMapError(true)}
+          >
+            {mapError ? (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-slate-50">
+                <div className="text-5xl">🗺️</div>
+                <div className="text-center">
+                  <p className="font-bold text-slate-700 text-lg">Maps could not load</p>
+                  <p className="text-sm text-slate-500 mt-1 max-w-xs">
+                    The Google Maps API key is not authorized for this URL.
+                    Add <code className="bg-slate-200 px-1 rounded text-xs">http://localhost:5173/*</code> to your
+                    key's HTTP referrers in Google Cloud Console.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <Map
+                defaultCenter={initialCenter}
+                defaultZoom={initialZoom}
+                gestureHandling="greedy"
+                mapId={GOOGLE_MAPS_MAP_ID}
+                style={{ width: "100%", height: "100%" }}
+              >
+                <MapMarkers
+                  farmLocation={farmLocation}
+                  providerLocation={providerLocation}
+                  userLocation={userLocation}
+                />
+              </Map>
+            )}
           </APIProvider>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center gap-4">
-          <div className="flex gap-4 text-xs text-slate-500">
+        {/* Legend & Controls */}
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
+          <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+            {userLocation && !providerLocation && (
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow inline-block" />
+                Your Location
+              </span>
+            )}
             {farmLocation && (
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-green-600 inline-block" /> Farm Location
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-green-600 inline-block" /> 🌾 Farm Destination
               </span>
             )}
             {providerLocation && (
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> Provider Location
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> 🚜 Provider Location
               </span>
             )}
           </div>
@@ -256,17 +324,16 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
             {role === "provider" && (
               <KSButton
                 onClick={toggleBroadcast}
-                className={`gap-2 px-5 py-2 text-sm border-0 ${
+                className={`gap-2 px-5 py-2 text-sm border-0 font-bold ${
                   isBroadcasting
                     ? "bg-red-500 hover:bg-red-600 text-white"
                     : "bg-blue-600 hover:bg-blue-700 text-white"
                 }`}
               >
-                {isBroadcasting ? (
-                  <><X size={14} /> Stop Broadcasting</>
-                ) : (
-                  <><LocateFixed size={14} /> Start Journey</>
-                )}
+                {isBroadcasting
+                  ? <><X size={14} /> Stop Sharing</>
+                  : <><LocateFixed size={14} /> Start Journey</>
+                }
               </KSButton>
             )}
           </div>

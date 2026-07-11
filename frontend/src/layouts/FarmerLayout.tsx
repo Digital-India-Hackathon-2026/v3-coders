@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, CalendarRange, User, LogOut, Bell, Menu, Tractor, Sprout } from "lucide-react";
+import { LayoutDashboard, CalendarRange, User, LogOut, Bell, Menu, Tractor, Sprout, BarChart3 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import NotificationDropdown from "../components/ui/NotificationDropdown";
@@ -21,6 +21,7 @@ const FarmerLayout = () => {
     { name: "Dashboard", path: "/farmer", icon: <LayoutDashboard size={20} /> },
     { name: "Book Service", path: "/farmer/book", icon: <Sprout size={20} /> },
     { name: "My Bookings", path: "/farmer/bookings", icon: <CalendarRange size={20} /> },
+    { name: "Price Surveys", path: "/farmer/surveys", icon: <BarChart3 size={20} /> },
     { name: "My Profile", path: "/farmer/profile", icon: <User size={20} /> },
   ];
 
@@ -51,11 +52,26 @@ const FarmerLayout = () => {
       >
         <div>
           {/* Logo */}
-          <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-100">
-            <Tractor className="text-green-700 shrink-0" size={28} />
-            {isSidebarOpen && (
-              <span className="text-xl font-bold text-slate-800 tracking-tight">KisanSeeva</span>
-            )}
+          <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-100 group">
+            <img 
+              src="/farmer-logo.png" 
+              alt="Farmer Logo" 
+              className={`object-contain transition-all duration-300 ${isSidebarOpen ? 'w-32 h-auto' : 'w-10 h-10'}`} 
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const fallback = e.currentTarget.nextElementSibling;
+                if (fallback) {
+                  fallback.classList.remove('hidden');
+                  fallback.classList.add('flex');
+                }
+              }}
+            />
+            <div className="hidden items-center gap-3">
+              <Tractor className="text-green-700 shrink-0" size={28} />
+              {isSidebarOpen && (
+                <span className="text-xl font-bold text-slate-800 tracking-tight">KisanSeeva</span>
+              )}
+            </div>
           </div>
 
           {/* Navigation Links */}
@@ -112,9 +128,17 @@ const FarmerLayout = () => {
 
             {/* Profile Brief */}
             <div className="flex items-center gap-3 border-l border-slate-100 pl-4">
-              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center font-bold text-green-700">
-                {userInitials}
-              </div>
+              {user?.documents?.selfie ? (
+                <img 
+                  src={user.documents.selfie} 
+                  alt="Profile" 
+                  className="w-10 h-10 rounded-full object-cover border border-green-200"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center font-bold text-green-700">
+                  {userInitials}
+                </div>
+              )}
               <div className="hidden md:block">
                 <p className="text-sm font-semibold text-slate-800">{user?.name || "Farmer"}</p>
                 <p className="text-xs text-slate-400">{userLocation}</p>

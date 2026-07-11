@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, Shield, CalendarRange, User, LogOut, Bell, Menu, Tractor, DollarSign } from "lucide-react";
+import { LayoutDashboard, Shield, CalendarRange, User, LogOut, Bell, Menu, Tractor, DollarSign, BarChart3 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import NotificationDropdown from "../components/ui/NotificationDropdown";
@@ -23,6 +23,7 @@ const ProviderLayout = () => {
     { name: "My Services", path: "/provider/services", icon: <Tractor size={20} /> },
     { name: "Manage Bookings", path: "/provider/bookings", icon: <CalendarRange size={20} /> },
     { name: "My Earnings", path: "/provider/earnings", icon: <DollarSign size={20} /> },
+    { name: "Price Surveys", path: "/provider/surveys", icon: <BarChart3 size={20} /> },
     { name: "Business Profile", path: "/provider/profile", icon: <User size={20} /> },
   ];
 
@@ -52,11 +53,26 @@ const ProviderLayout = () => {
       >
         <div>
           {/* Logo */}
-          <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-100">
-            <Tractor className="text-yellow-600 shrink-0" size={28} />
-            {isSidebarOpen && (
-              <span className="text-xl font-bold text-slate-800 tracking-tight">KisanSeeva</span>
-            )}
+          <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-100 group">
+            <img 
+              src="/provider-logo.png" 
+              alt="Provider Logo" 
+              className={`object-contain transition-all duration-300 ${isSidebarOpen ? 'w-32 h-auto' : 'w-10 h-10'}`} 
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const fallback = e.currentTarget.nextElementSibling;
+                if (fallback) {
+                  fallback.classList.remove('hidden');
+                  fallback.classList.add('flex');
+                }
+              }}
+            />
+            <div className="hidden items-center gap-3">
+              <Tractor className="text-green-700 shrink-0" size={28} />
+              {isSidebarOpen && (
+                <span className="text-xl font-bold text-slate-800 tracking-tight">KisanSeeva</span>
+              )}
+            </div>
           </div>
 
           {/* Navigation Links */}
@@ -132,9 +148,17 @@ const ProviderLayout = () => {
 
             {/* Profile Brief */}
             <div className="flex items-center gap-3 border-l border-slate-100 pl-4">
-              <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center font-bold text-slate-850">
-                {userInitials}
-              </div>
+              {user?.documents?.selfie ? (
+                <img 
+                  src={user.documents.selfie} 
+                  alt="Profile" 
+                  className="w-10 h-10 rounded-full object-cover border border-yellow-250"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center font-bold text-slate-850">
+                  {userInitials}
+                </div>
+              )}
               <div className="hidden md:block text-left">
                 <p className="text-sm font-semibold text-slate-800">{user?.name || "Provider"}</p>
                 <p className="text-xs text-slate-400">Owner (Verified)</p>

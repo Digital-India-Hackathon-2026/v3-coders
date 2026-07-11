@@ -6,6 +6,9 @@ import LandingPage from "../pages/landing/LandingPage";
 // Authentication Pages
 import LoginPage from "../pages/auth/LoginPage";
 import RegisterPage from "../pages/auth/RegisterPage";
+import PendingApprovalPage from "../pages/auth/PendingApprovalPage";
+import ForgotPasswordPage from "../pages/auth/ForgotPasswordPage";
+import ResetPasswordPage from "../pages/auth/ResetPasswordPage";
 
 // Farmer Portal Pages
 import FarmerLayout from "../layouts/FarmerLayout";
@@ -29,6 +32,8 @@ import UsersPage from "../pages/admin/UsersPage";
 import ProvidersPage from "../pages/admin/ProvidersPage";
 import BookingsPage from "../pages/admin/BookingsPage";
 import ReportsPage from "../pages/admin/ReportsPage";
+import SurveyPage from "../pages/admin/SurveyPage";
+import SurveyResponsePage from "../pages/shared/SurveyResponsePage";
 
 function AppRoutes() {
   return (
@@ -37,12 +42,16 @@ function AppRoutes() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/pending-approval" element={<PendingApprovalPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Farmer Dashboard Sub-routes */}
       <Route path="/farmer" element={<FarmerLayout />}>
         <Route index element={<FarmerDashboard />} />
         <Route path="book" element={<BookService />} />
         <Route path="bookings" element={<MyBookings />} />
+        <Route path="surveys" element={<SurveyResponsePage />} />
         <Route path="profile" element={<FarmerProfile />} />
       </Route>
 
@@ -52,6 +61,7 @@ function AppRoutes() {
         <Route path="services" element={<MyServices />} />
         <Route path="bookings" element={<ProviderBookings />} />
         <Route path="earnings" element={<Earnings />} />
+        <Route path="surveys" element={<SurveyResponsePage />} />
         <Route path="profile" element={<ProviderProfile />} />
       </Route>
 
@@ -62,6 +72,7 @@ function AppRoutes() {
         <Route path="providers" element={<ProvidersPage />} />
         <Route path="bookings" element={<BookingsPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="surveys" element={<SurveyPage />} />
       </Route>
     </Routes>
   );

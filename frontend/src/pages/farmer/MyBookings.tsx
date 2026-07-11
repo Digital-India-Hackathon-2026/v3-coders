@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { Search, Filter, Tractor, Star, CheckCircle2, XCircle, Clock, MessageSquare } from "lucide-react";
+import { Search, Filter, Tractor, Star, CheckCircle2, XCircle, Clock, MessageSquare, CreditCard } from "lucide-react";
 import { KSCard, KSBadge, KSButton, KSModal } from "../../components/ui";
 import LiveTrackingModal from "../../components/dashboard/LiveTrackingModal";
+import PaymentModal from "../../components/dashboard/PaymentModal";
 import API from "../../services/api";
 
 interface Booking {
@@ -20,6 +21,9 @@ interface Booking {
   price_per_hour: string;
   provider_name: string;
   provider_phone: string;
+  payment_status?: string;
+  payment_method?: string;
+  payment_transaction_id?: string;
 }
 
 const MyBookings = () => {
@@ -33,6 +37,11 @@ const MyBookings = () => {
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [trackingId, setTrackingId] = useState<number | null>(null);
+  
+  // Payment states
+  const [isPayOpen, setIsPayOpen] = useState(false);
+  const [payBookingId, setPayBookingId] = useState<number | null>(null);
+  const [payBookingPrice, setPayBookingPrice] = useState(0);
 
   const fetchBookings = async () => {
     try {
@@ -203,6 +212,16 @@ const MyBookings = () => {
                     {getStatusIcon(b.status)}
                     <span className="capitalize ml-1">{b.status}</span>
                   </KSBadge>
+
+                  {/* Payment Badge */}
+                  {(b.status === "completed" || b.status === "confirmed") && (
+                    <div className="mt-1.5 sm:mt-0 sm:ml-2 inline-block">
+                      <KSBadge variant={b.payment_status === "paid" ? "success" : "danger"}>
+                        <CreditCard size={12} className="mr-1" />
+                        <span>{b.payment_status === "paid" ? "Paid" : "Unpaid"}</span>
+                      </KSBadge>
+                    </div>
+                  )}
                 </div>
 
                 {/* Cancel Action */}
@@ -231,6 +250,21 @@ const MyBookings = () => {
                 {b.status === "completed" && b.rating === null && (
                   <KSButton variant="outline" className="px-4 py-2 text-xs" onClick={() => openRatingModal(b.id)}>
                     Rate Provider
+                  </KSButton>
+                )}
+
+                {/* Pay Action */}
+                {(b.status === "completed" || b.status === "confirmed") && b.payment_status !== "paid" && (
+                  <KSButton 
+                    className="px-4 py-2 text-xs bg-green-600 hover:bg-green-700 border-none flex items-center gap-1" 
+                    onClick={() => {
+                      setPayBookingId(b.id);
+                      setPayBookingPrice(parseFloat(b.total_price));
+                      setIsPayOpen(true);
+                    }}
+                  >
+                    <CreditCard size={12} />
+                    Pay Now
                   </KSButton>
                 )}
 
@@ -300,6 +334,20 @@ const MyBookings = () => {
           </div>
         </div>
       </KSModal>
+
+      {/* Payment Modal */}
+      {payBookingId !== null && (
+        <PaymentModal
+          isOpen={isPayOpen}
+          onClose={() => {
+            setIsPayOpen(false);
+            setPayBookingId(null);
+          }}
+          bookingId={payBookingId}
+          totalPrice={payBookingPrice}
+          onSuccess={fetchBookings}
+        />
+      )}
 
       {/* Live Tracking Modal */}
       {trackingId && (

@@ -246,6 +246,74 @@ const getBookingLocation = async (req, res) => {
   }
 };
 
+// Pay for a booking (Farmer only)
+const payBooking = async (req, res) => {
+  const { id } = req.params;
+  const { paymentMethod } = req.body; // 'upi', 'card', 'cod'
+
+  const allowedMethods = ["upi", "card", "cod"];
+  if (!allowedMethods.includes(paymentMethod)) {
+    return res.status(400).json({ message: "Invalid payment method." });
+  }
+
+  try {
+    // 1. Fetch booking to check ownership & status
+    const bookingRes = await db.query(
+      "SELECT b.*, s.name as service_name, s.provider_id FROM bookings b JOIN services s ON b.service_id = s.id WHERE b.id = $1",
+      [id]
+    );
+
+    if (bookingRes.rows.length === 0) {
+      return res.status(404).json({ message: "Booking not found." });
+    }
+
+    const booking = bookingRes.rows[0];
+
+    // Ensure requesting user is the farmer who booked it
+    if (booking.farmer_id !== req.user.id) {
+      return res.status(403).json({ message: "Access forbidden: you do not own this booking." });
+    }
+
+    // Only allow paying for bookings that are confirmed or completed
+    if (booking.status !== "confirmed" && booking.status !== "completed") {
+      return res.status(400).json({ message: "Payment is only accepted for confirmed or completed bookings." });
+    }
+
+    if (booking.payment_status === "paid") {
+      return res.status(400).json({ message: "This booking has already been paid." });
+    }
+
+    // Generate simulated transaction ID
+    const transactionId = `KS-PAY-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+    // 2. Update payment details
+    const updateQuery = `
+      UPDATE bookings 
+      SET payment_status = 'paid', payment_method = $1, payment_transaction_id = $2 
+      WHERE id = $3 
+      RETURNING *
+    `;
+    const result = await db.query(updateQuery, [paymentMethod, transactionId, id]);
+
+    // 3. Create notification for provider
+    const notifQuery = `
+      INSERT INTO notifications (user_id, message) 
+      VALUES ($1, $2)
+    `;
+    const notifMessage = `💰 Payment of ₹${parseFloat(booking.total_price).toFixed(2)} received via ${paymentMethod.toUpperCase()} for booking of ${booking.service_name} (KS-${booking.id}).`;
+    await db.query(notifQuery, [booking.provider_id, notifMessage]);
+
+    res.json({
+      message: "Payment processed successfully.",
+      booking: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error("Pay Booking Error:", error);
+    res.status(500).json({ message: "Server error processing payment." });
+  }
+};
+
 module.exports = {
   createBooking,
   getFarmerBookings,
@@ -253,5 +321,6 @@ module.exports = {
   updateBookingStatus,
   rateBooking,
   updateProviderLocation,
-  getBookingLocation
+  getBookingLocation,
+  payBooking
 };

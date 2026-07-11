@@ -22,6 +22,7 @@ const AdminLayout = () => {
     { name: "Manage Providers", path: "/admin/providers", icon: <Tractor size={20} /> },
     { name: "All Bookings", path: "/admin/bookings", icon: <CalendarRange size={20} /> },
     { name: "Analytics & Reports", path: "/admin/reports", icon: <BarChart3 size={20} /> },
+    { name: "Pricing Surveys", path: "/admin/surveys", icon: <PieChart size={20} /> },
   ];
 
   const handleLogout = () => {
@@ -108,9 +109,17 @@ const AdminLayout = () => {
           <div className="flex items-center gap-4">
             {/* Profile Brief */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-950/60 border border-red-500/30 flex items-center justify-center font-bold text-red-500">
-                {userInitials}
-              </div>
+              {user?.documents?.selfie ? (
+                <img 
+                  src={user.documents.selfie} 
+                  alt="Admin Profile" 
+                  className="w-10 h-10 rounded-full object-cover border border-red-500/30"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-red-950/60 border border-red-500/30 flex items-center justify-center font-bold text-red-500">
+                  {userInitials}
+                </div>
+              )}
               <div className="hidden md:block text-left">
                 <p className="text-sm font-semibold text-white">{user?.name || "System Admin"}</p>
                 <p className="text-xs text-slate-500">All permissions active</p>

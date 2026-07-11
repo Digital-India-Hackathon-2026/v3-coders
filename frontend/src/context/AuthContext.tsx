@@ -9,6 +9,11 @@ export interface User {
   role: "farmer" | "provider" | "admin";
   extraInfo: string;
   status: "active" | "suspended";
+  documents?: {
+    aadhar?: string;
+    selfie?: string;
+    driving_license?: string;
+  };
 }
 
 interface AuthContextType {
@@ -23,9 +28,11 @@ interface AuthContextType {
     role: string;
     password: string;
     extraInfo: string;
-  }) => Promise<User>;
+  }) => Promise<{ user: User; message: string }>;
   logout: () => void;
   updateUserProfile: (data: { name: string; phone: string; extraInfo: string }) => Promise<User>;
+  forgotPassword: (email: string) => Promise<{ message: string }>;
+  resetPassword: (token: string, newPassword: string) => Promise<{ message: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -76,15 +83,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     role: string;
     password: string;
     extraInfo: string;
-  }): Promise<User> => {
+  }): Promise<{ user: User; message: string }> => {
     try {
       const res = await API.post("/auth/register", data);
-      const { token: receivedToken, user: receivedUser } = res.data;
+      const { token: receivedToken, user: receivedUser, message } = res.data;
 
-      localStorage.setItem("token", receivedToken);
-      setToken(receivedToken);
-      setUser(receivedUser);
-      return receivedUser;
+      // If a token was returned (e.g. admin registration or auto-active), store it
+      if (receivedToken) {
+        localStorage.setItem("token", receivedToken);
+        setToken(receivedToken);
+        setUser(receivedUser);
+      }
+      return { user: receivedUser, message };
     } catch (err: any) {
       const errorMsg = err.response?.data?.message || "Registration failed. Please check parameters.";
       throw new Error(errorMsg);
@@ -113,8 +123,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const forgotPassword = async (email: string): Promise<{ message: string }> => {
+    try {
+      const res = await API.post("/auth/forgot-password", { email });
+      return res.data;
+    } catch (err: any) {
+      throw new Error(err.response?.data?.message || "Failed to send reset link.");
+    }
+  };
+
+  const resetPassword = async (token: string, newPassword: string): Promise<{ message: string }> => {
+    try {
+      const res = await API.post("/auth/reset-password", { token, newPassword });
+      return res.data;
+    } catch (err: any) {
+      throw new Error(err.response?.data?.message || "Failed to reset password.");
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateUserProfile }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateUserProfile, forgotPassword, resetPassword }}>
       {children}
     </AuthContext.Provider>
   );

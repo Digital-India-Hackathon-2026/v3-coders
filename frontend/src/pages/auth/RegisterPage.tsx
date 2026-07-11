@@ -18,6 +18,13 @@ const RegisterPage = () => {
   const [extraInfo, setExtraInfo] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
+  
+  // Files
+  const [aadharFile, setAadharFile] = useState<File | null>(null);
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
+  const [drivingLicenseFile, setDrivingLicenseFile] = useState<File | null>(null);
+
   const navigate = useNavigate();
   const { register: authRegister } = useAuth();
 
@@ -30,22 +37,74 @@ const RegisterPage = () => {
     setStep(2);
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
+    if (step === 2) {
+      setError("");
+      setLoading(true);
+      try {
+        const { user } = await authRegister({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          phone: phone.trim(),
+          role,
+          password,
+          extraInfo: extraInfo.trim(),
+        });
+        setUserId(user.id);
+        setStep(3);
+      } catch (err: any) {
+        setError(err.message || "Registration failed. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    } else if (step === 3) {
+      await handleDocumentUpload();
+    }
+  };
+
+  const handleDocumentUpload = async () => {
+    if (!aadharFile || !selfieFile || (role === "provider" && !drivingLicenseFile)) {
+      setError("Please upload all required documents.");
+      return;
+    }
+
+    if (!userId) {
+      setError("User registration failed previously. Please start over.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("userId", userId.toString());
+    formData.append("aadhar", aadharFile);
+    formData.append("selfie", selfieFile);
+    if (drivingLicenseFile) {
+      formData.append("driving_license", drivingLicenseFile);
+    }
+
     setLoading(true);
+    setError("");
     try {
-      await authRegister({
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phone.trim(),
-        role,
-        password,
-        extraInfo: extraInfo.trim(),
+      // Use standard fetch or api instance if it supports FormData properly.
+      // Assuming api.ts defaults to JSON, we might need a specific config for multipart
+      const token = localStorage.getItem("token") || "";
+      const res = await fetch("http://localhost:5000/api/auth/upload-documents", {
+        method: "POST",
+        headers: {
+          // Do NOT set Content-Type header manually for FormData
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
+        body: formData,
       });
-      navigate(role === "farmer" ? "/farmer" : "/provider");
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Upload failed");
+      }
+
+      navigate("/pending-approval");
     } catch (err: any) {
-      setError(err.message || "Registration failed. Please try again.");
+      setError(err.message || "Failed to upload documents. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -61,7 +120,7 @@ const RegisterPage = () => {
     >
       {/* Step Indicator */}
       <div className="flex items-center gap-3 mb-8">
-        {[1, 2].map((s) => (
+        {[1, 2, 3].map((s) => (
           <React.Fragment key={s}>
             <div className={`flex items-center gap-2 ${s <= step ? "text-green-600" : "text-slate-400"}`}>
               <div
@@ -76,15 +135,15 @@ const RegisterPage = () => {
                 {s < step ? <CheckCircle2 size={16} /> : s}
               </div>
               <span className="text-sm font-semibold hidden sm:block">
-                {s === 1 ? "Basic Info" : "Details"}
+                {s === 1 ? "Basic Info" : s === 2 ? "Details" : "Documents"}
               </span>
             </div>
-            {s < 2 && <div className={`flex-1 h-0.5 rounded-full transition-all ${step > 1 ? "bg-green-400" : "bg-slate-200"}`} />}
+            {s < 3 && <div className={`flex-1 h-0.5 rounded-full transition-all ${step > s ? "bg-green-400" : "bg-slate-200"}`} />}
           </React.Fragment>
         ))}
       </div>
 
-      <form onSubmit={handleRegister} className="space-y-5">
+      <form onSubmit={handleRegisterSubmit} className="space-y-5">
         {step === 1 ? (
           <>
             {/* Role Selection */}
@@ -186,7 +245,7 @@ const RegisterPage = () => {
               Continue →
             </KSButton>
           </>
-        ) : (
+        ) : step === 2 ? (
           <>
             <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-sm text-green-800">
               <p className="font-semibold mb-0.5">Almost done, {name.split(" ")[0]}! 🌾</p>
@@ -236,9 +295,72 @@ const RegisterPage = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Creating Account...
+                    Saving...
                   </span>
-                ) : "Create Account 🚀"}
+                ) : "Next: Documents →"}
+              </KSButton>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-sm text-green-800">
+              <p className="font-semibold mb-0.5">Final Step: Verification Documents 📄</p>
+              <p className="text-green-700">Please upload your documents for admin approval.</p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Aadhaar Card (Required)</label>
+                <input
+                  type="file"
+                  accept="image/jpeg, image/png, application/pdf"
+                  onChange={(e) => setAadharFile(e.target.files ? e.target.files[0] : null)}
+                  className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Recent Selfie (Required)</label>
+                <input
+                  type="file"
+                  accept="image/jpeg, image/png"
+                  onChange={(e) => setSelfieFile(e.target.files ? e.target.files[0] : null)}
+                  className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                />
+              </div>
+
+              {role === "provider" && (
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Driving License (Required)</label>
+                  <input
+                    type="file"
+                    accept="image/jpeg, image/png, application/pdf"
+                    onChange={(e) => setDrivingLicenseFile(e.target.files ? e.target.files[0] : null)}
+                    className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div className="flex items-start gap-2.5 bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm border border-red-100">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <KSButton type="submit" disabled={loading} className="w-full py-4 text-center justify-center">
+                {loading ? (
+                  <span className="flex items-center gap-2 justify-center">
+                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Uploading...
+                  </span>
+                ) : "Submit for Verification 🚀"}
               </KSButton>
             </div>
           </>

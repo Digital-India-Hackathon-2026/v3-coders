@@ -51,11 +51,11 @@ const getUsers = async (req, res) => {
     const params = [];
 
     if (role === "farmer" || role === "provider") {
-      query += " WHERE role = $1";
+      query += " WHERE role = $1 AND status != 'pending'";
       params.push(role);
     } else {
-      // Exclude admins from standard user tables
-      query += " WHERE role != 'admin'";
+      // Exclude admins and pending users from standard user tables
+      query += " WHERE role != 'admin' AND status != 'pending'";
     }
 
     query += " ORDER BY created_at DESC";
@@ -129,9 +129,85 @@ const getAllBookings = async (req, res) => {
   }
 };
 
+// Get pending users for approval
+const getPendingUsers = async (req, res) => {
+  try {
+    const query = "SELECT id, name, email, phone, role, extra_info, status, documents, created_at FROM users WHERE status = 'pending' ORDER BY created_at ASC";
+    const result = await db.query(query);
+    res.json({ users: result.rows });
+  } catch (error) {
+    console.error("Get Pending Users Error:", error);
+    res.status(500).json({ message: "Server error fetching pending users." });
+  }
+};
+
+// Approve user
+const approveUser = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const updateQuery = "UPDATE users SET status = 'active' WHERE id = $1 RETURNING id, name, email, role, status";
+    const result = await db.query(updateQuery, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // Optional: add a notification for the user
+    await db.query("INSERT INTO notifications (user_id, message) VALUES ($1, $2)", [id, "Your account has been approved by the admin. You can now login!"]);
+
+    res.json({ message: "User approved successfully.", user: result.rows[0] });
+  } catch (error) {
+    console.error("Approve User Error:", error);
+    res.status(500).json({ message: "Server error approving user." });
+  }
+};
+
+// Reject user
+const rejectUser = async (req, res) => {
+  const { id } = req.params;
+  try {
+    // We can either delete the user or set status to rejected
+    const updateQuery = "UPDATE users SET status = 'rejected' WHERE id = $1 RETURNING id, name, email, role, status";
+    const result = await db.query(updateQuery, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    res.json({ message: "User rejected successfully.", user: result.rows[0] });
+  } catch (error) {
+    console.error("Reject User Error:", error);
+    res.status(500).json({ message: "Server error rejecting user." });
+  }
+};
+
+// Get public stats for the landing page (no auth required)
+const getPublicStats = async (req, res) => {
+  try {
+    const farmersRes = await db.query("SELECT COUNT(*) FROM users WHERE role = 'farmer' AND status = 'active'");
+    const providersRes = await db.query("SELECT COUNT(*) FROM users WHERE role = 'provider' AND status = 'active'");
+    const bookingsRes = await db.query("SELECT COUNT(*) FROM bookings");
+    const completedRes = await db.query("SELECT COUNT(*) FROM bookings WHERE status = 'completed'");
+
+    res.json({
+      farmers: parseInt(farmersRes.rows[0].count, 10),
+      providers: parseInt(providersRes.rows[0].count, 10),
+      bookings: parseInt(bookingsRes.rows[0].count, 10),
+      completed: parseInt(completedRes.rows[0].count, 10),
+    });
+  } catch (error) {
+    console.error("Get Public Stats Error:", error);
+    res.status(500).json({ message: "Server error fetching public stats." });
+  }
+};
+
 module.exports = {
   getStats,
   getUsers,
   updateUserStatus,
-  getAllBookings
+  getAllBookings,
+  getPendingUsers,
+  approveUser,
+  rejectUser,
+  getPublicStats
 };

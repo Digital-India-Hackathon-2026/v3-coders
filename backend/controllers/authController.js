@@ -39,16 +39,22 @@ const register = async (req, res) => {
 
     const newUser = result.rows[0];
 
-    // Create JWT
-    const token = jwt.sign(
-      { id: newUser.id, email: newUser.email, role: newUser.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    // Create JWT only if admin (active), otherwise return just user for pending flow
+    let token = null;
+    let message = "Registration successful. Your account is pending admin approval.";
+    
+    if (newUser.role === "admin" || newUser.status === "active") {
+      token = jwt.sign(
+        { id: newUser.id, email: newUser.email, role: newUser.role },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+      message = "Registration successful.";
+    }
 
     res.status(201).json({
-      message: "Registration successful.",
-      token,
+      message,
+      token, // will be null for farmers/providers until we update it to active, but we return it for structure
       user: {
         id: newUser.id,
         name: newUser.name,
@@ -89,6 +95,9 @@ const login = async (req, res) => {
     }
 
     // Check account status
+    if (user.status === "pending") {
+      return res.status(403).json({ message: "Your account is under review. Please wait for admin approval." });
+    }
     if (user.status === "suspended") {
       return res.status(403).json({ message: "Your account is suspended. Please contact the administrator." });
     }
@@ -130,7 +139,7 @@ const login = async (req, res) => {
 const getProfile = async (req, res) => {
   try {
     const result = await db.query(
-      "SELECT id, name, email, phone, role, extra_info, status, created_at FROM users WHERE id = $1",
+      "SELECT id, name, email, phone, role, extra_info, status, documents, created_at FROM users WHERE id = $1",
       [req.user.id]
     );
 
@@ -147,7 +156,8 @@ const getProfile = async (req, res) => {
         phone: user.phone,
         role: user.role,
         extraInfo: user.extra_info,
-        status: user.status
+        status: user.status,
+        documents: user.documents
       }
     });
 
@@ -198,9 +208,110 @@ const updateProfile = async (req, res) => {
   }
 };
 
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
+
+// Nodemailer config
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER || "your-email@gmail.com",
+    pass: process.env.EMAIL_PASS || "your-app-password",
+  },
+});
+
+// Forgot Password
+const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ message: "Please provide an email." });
+  }
+
+  try {
+    const result = await db.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "No account with that email exists." });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    // Token expires in 1 hour
+    const resetExpires = new Date(Date.now() + 3600000); 
+
+    await db.query(
+      "UPDATE users SET reset_password_token = $1, reset_password_expires = $2 WHERE email = $3",
+      [resetToken, resetExpires, email.toLowerCase()]
+    );
+
+    // Create reset URL
+    // We assume the frontend is running on localhost:5173 for local dev, you can update this via env
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER || "KisanSeeva",
+      to: email,
+      subject: "Password Reset Request - KisanSeeva",
+      text: `You requested a password reset. Click this link to set a new password: \n\n${resetUrl}\n\nIf you did not request this, please ignore this email.`,
+      html: `<p>You requested a password reset.</p><p>Click <a href="${resetUrl}">here</a> to set a new password.</p><p>If you did not request this, please ignore this email.</p>`
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      res.json({ message: "Password reset link sent to your email." });
+    } catch (mailError) {
+      console.error("Mail send error (Check EMAIL_USER/EMAIL_PASS):", mailError);
+      // Fallback for dev if email isn't configured
+      res.json({ 
+        message: "Dev Mode: Email not configured properly, but token generated.", 
+        devResetToken: resetToken 
+      });
+    }
+
+  } catch (error) {
+    console.error("Forgot Password Error:", error);
+    res.status(500).json({ message: "Server error processing request." });
+  }
+};
+
+// Reset Password
+const resetPassword = async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ message: "Token and new password are required." });
+  }
+
+  try {
+    const result = await db.query(
+      "SELECT * FROM users WHERE reset_password_token = $1 AND reset_password_expires > NOW()",
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ message: "Password reset token is invalid or has expired." });
+    }
+
+    const user = result.rows[0];
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await db.query(
+      "UPDATE users SET password = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE id = $2",
+      [hashedPassword, user.id]
+    );
+
+    res.json({ message: "Password has been successfully reset. You can now login." });
+  } catch (error) {
+    console.error("Reset Password Error:", error);
+    res.status(500).json({ message: "Server error resetting password." });
+  }
+};
+
 module.exports = {
   register,
   login,
   getProfile,
-  updateProfile
+  updateProfile,
+  forgotPassword,
+  resetPassword
 };

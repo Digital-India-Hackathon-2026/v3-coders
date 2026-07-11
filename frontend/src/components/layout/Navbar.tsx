@@ -30,12 +30,27 @@ function Navbar() {
       <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 group">
-          <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center shadow-lg shadow-green-600/30 group-hover:scale-105 transition-transform">
-            <Tractor size={20} className="text-white" />
+          <img 
+            src="/logo.png" 
+            alt="KisanSeeva Logo" 
+            className="h-10 w-auto object-contain group-hover:scale-105 transition-transform" 
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              const fallback = e.currentTarget.nextElementSibling;
+              if (fallback) {
+                fallback.classList.remove('hidden');
+                fallback.classList.add('flex');
+              }
+            }}
+          />
+          <div className="hidden items-center gap-2.5">
+            <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center shadow-lg shadow-green-600/30">
+              <Tractor size={20} className="text-white" />
+            </div>
+            <span className="text-2xl font-extrabold tracking-tight text-slate-800">
+              Kisan<span className="text-green-600">Seeva</span>
+            </span>
           </div>
-          <span className="text-2xl font-extrabold tracking-tight text-slate-800">
-            Kisan<span className="text-green-600">Seeva</span>
-          </span>
         </Link>
 
         {/* Desktop Menu */}

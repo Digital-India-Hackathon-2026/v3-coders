@@ -121,7 +121,7 @@ const LoginPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Password
             </label>
-            <a href="#" className="text-xs font-semibold text-green-700 hover:underline">
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/forgot-password"); }} className="text-xs font-semibold text-green-700 hover:underline">
               Forgot Password?
             </a>
           </div>

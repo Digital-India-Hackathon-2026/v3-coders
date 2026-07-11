@@ -11,6 +11,9 @@ interface Booking {
   hours_required: string;
   total_price: string;
   status: string;
+  payment_status?: string;
+  payment_method?: string;
+  payment_transaction_id?: string;
 }
 
 const Earnings = () => {
@@ -35,8 +38,12 @@ const Earnings = () => {
   }, []);
 
   const totalEarnings = completedJobs.reduce((sum, b) => sum + parseFloat(b.total_price), 0);
-  const paidToAccount = totalEarnings * 0.95; // 5% platform fee deduction
-  const pendingEarnings = confirmedJobs.reduce((sum, b) => sum + parseFloat(b.total_price), 0);
+  const paidToAccount = completedJobs
+    .filter(b => b.payment_status === "paid")
+    .reduce((sum, b) => sum + parseFloat(b.total_price) * 0.95, 0);
+  
+  const pendingEarnings = confirmedJobs.reduce((sum, b) => sum + parseFloat(b.total_price), 0) + 
+    completedJobs.filter(b => b.payment_status !== "paid").reduce((sum, b) => sum + parseFloat(b.total_price), 0);
 
   const formatSQLDate = (dateStr: string) => {
     try {
@@ -96,10 +103,10 @@ const Earnings = () => {
 
         <KSCard className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-slate-400">Confirmed / In-Progress</p>
+            <p className="text-sm font-semibold text-slate-400">Pending Payouts</p>
             <h3 className="text-3xl font-bold text-slate-800 mt-1">₹{pendingEarnings.toLocaleString("en-IN")}</h3>
             <span className="text-xs font-semibold text-yellow-600 mt-2 flex items-center gap-1">
-              <CreditCard size={14} /> Escrowed in platform
+              <CreditCard size={14} /> Escrowed or completed unpaid
             </span>
           </div>
           <div className="p-4 bg-yellow-50 text-yellow-600 rounded-2xl">
@@ -139,8 +146,8 @@ const Earnings = () => {
                     <td className="px-6 py-4">{t.farmer_name}</td>
                     <td className="px-6 py-4 font-bold text-slate-800">₹{parseFloat(t.total_price).toLocaleString("en-IN")}</td>
                     <td className="px-6 py-4">
-                      <KSBadge variant="success">
-                        <span>Paid</span>
+                      <KSBadge variant={t.payment_status === "paid" ? "success" : "danger"}>
+                        <span>{t.payment_status === "paid" ? "Paid" : "Unpaid"}</span>
                       </KSBadge>
                     </td>
                   </tr>
