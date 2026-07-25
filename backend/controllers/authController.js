@@ -211,16 +211,19 @@ const updateProfile = async (req, res) => {
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 
-// Nodemailer config — uses explicit SMTP for reliability on production
+// Nodemailer config — port 587 TLS (works on Render free tier, port 465 is blocked)
 const createTransporter = () => {
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 465,
-    secure: true, // SSL
+    port: 587,
+    secure: false, // STARTTLS
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
+    connectionTimeout: 10000, // 10 seconds
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 };
 
