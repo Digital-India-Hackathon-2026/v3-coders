@@ -211,19 +211,23 @@ const updateProfile = async (req, res) => {
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 
-// Nodemailer config
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER || "your-email@gmail.com",
-    pass: process.env.EMAIL_PASS || "your-app-password",
-  },
-});
+// Nodemailer config — uses explicit SMTP for reliability on production
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true, // SSL
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+};
 
 // Forgot Password
 const forgotPassword = async (req, res) => {
   const { email } = req.body;
-  
+
   if (!email) {
     return res.status(400).json({ message: "Please provide an email." });
   }
@@ -231,40 +235,94 @@ const forgotPassword = async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "No account with that email exists." });
+      // Security: don't reveal if email exists or not
+      return res.json({ message: "If that email is registered, a reset link has been sent." });
     }
 
+    const user = result.rows[0];
     const resetToken = crypto.randomBytes(32).toString("hex");
-    // Token expires in 1 hour
-    const resetExpires = new Date(Date.now() + 3600000); 
+    const resetExpires = new Date(Date.now() + 3600000); // 1 hour
 
     await db.query(
       "UPDATE users SET reset_password_token = $1, reset_password_expires = $2 WHERE email = $3",
       [resetToken, resetExpires, email.toLowerCase()]
     );
 
-    // Create reset URL
-    // We assume the frontend is running on localhost:5173 for local dev, you can update this via env
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER || "KisanSeeva",
-      to: email,
-      subject: "Password Reset Request - KisanSeeva",
-      text: `You requested a password reset. Click this link to set a new password: \n\n${resetUrl}\n\nIf you did not request this, please ignore this email.`,
-      html: `<p>You requested a password reset.</p><p>Click <a href="${resetUrl}">here</a> to set a new password.</p><p>If you did not request this, please ignore this email.</p>`
-    };
+    // Premium HTML email template
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#0f172a;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:20px;overflow:hidden;border:1px solid #334155;">
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#059669,#10b981);padding:36px 40px;text-align:center;">
+            <h1 style="margin:0;color:#fff;font-size:28px;font-weight:900;letter-spacing:-0.5px;">🌾 KisanSeeva</h1>
+            <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Connecting Rural India</p>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <h2 style="margin:0 0 16px;color:#f1f5f9;font-size:22px;font-weight:700;">Password Reset Request</h2>
+            <p style="margin:0 0 12px;color:#94a3b8;font-size:15px;line-height:1.6;">Hi <strong style="color:#e2e8f0;">${user.name}</strong>,</p>
+            <p style="margin:0 0 28px;color:#94a3b8;font-size:15px;line-height:1.6;">We received a request to reset your KisanSeeva password. Click the button below to set a new password. This link will expire in <strong style="color:#34d399;">1 hour</strong>.</p>
+            <!-- CTA Button -->
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+              <tr>
+                <td style="background:linear-gradient(135deg,#059669,#10b981);border-radius:12px;padding:1px;">
+                  <a href="${resetUrl}" style="display:block;padding:14px 40px;background:linear-gradient(135deg,#059669,#10b981);border-radius:12px;color:#fff;font-size:16px;font-weight:700;text-decoration:none;text-align:center;">Reset My Password</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0 0 8px;color:#64748b;font-size:13px;">Or copy and paste this link in your browser:</p>
+            <p style="margin:0 0 28px;word-break:break-all;"><a href="${resetUrl}" style="color:#34d399;font-size:13px;">${resetUrl}</a></p>
+            <hr style="border:none;border-top:1px solid #334155;margin:0 0 24px;">
+            <p style="margin:0;color:#475569;font-size:13px;line-height:1.6;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="background:#0f172a;padding:20px 40px;text-align:center;border-top:1px solid #1e293b;">
+            <p style="margin:0;color:#334155;font-size:12px;">© 2026 KisanSeeva Technologies Pvt. Ltd. · Hyderabad, India</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.warn("⚠️  EMAIL_USER or EMAIL_PASS not set. Running in dev mode.");
+      return res.json({
+        message: "Dev Mode: Email credentials not configured.",
+        devResetToken: resetToken
+      });
+    }
 
     try {
-      await transporter.sendMail(mailOptions);
+      const transporter = createTransporter();
+      await transporter.sendMail({
+        from: `"KisanSeeva" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: "🔐 Reset Your KisanSeeva Password",
+        text: `Reset your password here: ${resetUrl}\n\nThis link expires in 1 hour.`,
+        html: htmlBody,
+      });
+      console.log(`✅ Password reset email sent to ${email}`);
       res.json({ message: "Password reset link sent to your email." });
     } catch (mailError) {
-      console.error("Mail send error (Check EMAIL_USER/EMAIL_PASS):", mailError);
-      // Fallback for dev if email isn't configured
-      res.json({ 
-        message: "Dev Mode: Email not configured properly, but token generated.", 
-        devResetToken: resetToken 
+      console.error("❌ Mail send failed:", mailError.message, mailError.code);
+      res.status(500).json({
+        message: "Failed to send email. Please check server email configuration.",
+        error: mailError.message
       });
     }
 
