@@ -211,17 +211,18 @@ const updateProfile = async (req, res) => {
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 
-// Nodemailer config — port 587 TLS (works on Render free tier, port 465 is blocked)
+// Nodemailer config — port 587 TLS, forced IPv4 (Render free tier blocks IPv6)
 const createTransporter = () => {
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 587,
     secure: false, // STARTTLS
+    family: 4,     // Force IPv4 — Render free tier doesn't support IPv6
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    connectionTimeout: 10000, // 10 seconds
+    connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000,
   });
