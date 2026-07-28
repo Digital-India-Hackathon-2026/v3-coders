@@ -26,7 +26,7 @@ app.use("/api/surveys", surveyRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/complaints", complaintRoutes);
 
-const axios = require("axios");
+const { Readable } = require("stream");
 
 function stripMarkdown(text) {
   if (!text) return "";
@@ -49,20 +49,22 @@ app.get("/api/tts", async (req, res) => {
     const targetLang = (lang || "te").split("-")[0];
     const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${targetLang}&client=tw-ob`;
 
-    const response = await axios({
-      method: "get",
-      url,
-      responseType: "stream",
+    const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
     });
 
+    if (!response.ok) {
+      return res.status(500).send("TTS Upstream Error");
+    }
+
     res.set({
       "Content-Type": "audio/mpeg",
-      "Transfer-Encoding": "chunked",
     });
-    response.data.pipe(res);
+
+    const nodeStream = Readable.fromWeb(response.body);
+    nodeStream.pipe(res);
   } catch (err) {
     console.error("TTS Proxy Error:", err.message);
     res.status(500).send("TTS Proxy Failed");
