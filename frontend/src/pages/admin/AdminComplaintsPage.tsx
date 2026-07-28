@@ -236,7 +236,7 @@ export default function AdminComplaintsPage() {
                   <span className={`px-2.5 py-1 rounded-xl text-[10px] font-bold uppercase ${statusBadge[c.status]}`}>
                     {c.status.replace("_", " ")}
                   </span>
-                  {c.admin_response && <MessageSquare size={14} className="text-blue-400" title="Admin responded" />}
+                  {c.admin_response && <span title="Admin responded"><MessageSquare size={14} className="text-blue-400" /></span>}
                   {expandedId === c.id ? <ChevronUp size={16} className="text-slate-500" /> : <ChevronDown size={16} className="text-slate-500" />}
                 </div>
               </div>
