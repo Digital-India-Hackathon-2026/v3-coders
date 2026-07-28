@@ -9,6 +9,7 @@ interface Service {
   name: string;
   type: string;
   price_per_hour: string;
+  pricing_model?: "hourly" | "fixed";
   description: string;
   status: "available" | "unavailable";
 }
@@ -25,6 +26,7 @@ const MyServices = () => {
   // Form fields
   const [name, setName] = useState("");
   const [type, setType] = useState("Tractor");
+  const [pricingModel, setPricingModel] = useState<"hourly" | "fixed">("hourly");
   const [pricePerHour, setPricePerHour] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<"available" | "unavailable">("available");
@@ -53,6 +55,7 @@ const MyServices = () => {
     setEditingId(null);
     setName("");
     setType("Tractor");
+    setPricingModel("hourly");
     setPricePerHour("");
     setDescription("");
     setStatus("available");
@@ -65,6 +68,7 @@ const MyServices = () => {
     setEditingId(service.id);
     setName(service.name);
     setType(service.type);
+    setPricingModel(service.pricing_model || "hourly");
     setPricePerHour(parseFloat(service.price_per_hour).toString());
     setDescription(service.description);
     setStatus(service.status);
@@ -85,6 +89,7 @@ const MyServices = () => {
       const payload = {
         name,
         type,
+        pricingModel,
         pricePerHour: parseFloat(pricePerHour),
         description,
         status,
@@ -177,9 +182,14 @@ const MyServices = () => {
                 <div>
                   <h3 className="font-bold text-slate-800 text-lg leading-tight">{s.name}</h3>
                   <p className="text-sm font-semibold text-slate-400 mt-1 capitalize">{s.type} Service</p>
-                  <p className="text-green-700 font-bold mt-2">
-                    ₹{parseFloat(s.price_per_hour).toLocaleString("en-IN")}/hour
-                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <p className="text-green-700 font-bold">
+                      ₹{parseFloat(s.price_per_hour).toLocaleString("en-IN")}{s.pricing_model === "fixed" ? " (Fixed Service Charge)" : "/hour"}
+                    </p>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.pricing_model === "fixed" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
+                      {s.pricing_model === "fixed" ? "Fixed Cost" : "Hourly Rate"}
+                    </span>
+                  </div>
                   {s.description && (
                     <p className="text-xs text-slate-500 mt-2 line-clamp-2 italic">{s.description}</p>
                   )}
@@ -231,6 +241,27 @@ const MyServices = () => {
             />
           </div>
 
+          {/* Pricing Model selection (Provider side only) */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Charging Mode (Only Provider Can Set)</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div 
+                onClick={() => setPricingModel("hourly")}
+                className={`p-3 rounded-2xl border-2 cursor-pointer transition ${pricingModel === "hourly" ? "border-yellow-500 bg-yellow-50/50" : "border-slate-200 hover:border-slate-300"}`}
+              >
+                <p className="text-sm font-bold text-slate-800">⏱️ Hourly Billing</p>
+                <p className="text-xs text-slate-500 mt-0.5">Calculated by actual work timer duration</p>
+              </div>
+              <div 
+                onClick={() => setPricingModel("fixed")}
+                className={`p-3 rounded-2xl border-2 cursor-pointer transition ${pricingModel === "fixed" ? "border-purple-500 bg-purple-50/50" : "border-slate-200 hover:border-slate-300"}`}
+              >
+                <p className="text-sm font-bold text-slate-800">🔧 Fixed Service Charge</p>
+                <p className="text-xs text-slate-500 mt-0.5">Flat job charge (Repairs, Spare Parts, Maintenance)</p>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">Service Type</label>
@@ -243,16 +274,20 @@ const MyServices = () => {
                 <option value="Harvester">Harvester</option>
                 <option value="Seeder">Seeder</option>
                 <option value="Sprayer">Sprayer</option>
+                <option value="Repair & Maintenance">Repair & Maintenance</option>
+                <option value="Other">Other</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Rate (₹ per hour)</label>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                {pricingModel === "fixed" ? "Fixed Price (₹)" : "Rate (₹ per hour)"}
+              </label>
               <input
                 type="number"
                 value={pricePerHour}
                 onChange={(e) => setPricePerHour(e.target.value)}
-                placeholder="e.g. 800"
+                placeholder={pricingModel === "fixed" ? "e.g. 1500" : "e.g. 800"}
                 className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yellow-500/20 focus:border-yellow-500 transition text-sm"
                 required
               />

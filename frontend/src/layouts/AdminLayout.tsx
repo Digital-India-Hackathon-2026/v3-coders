@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, Users, UserCog, CalendarRange, PieChart, LogOut, Bell, Menu, Tractor, Settings, BarChart3, ShieldAlert, Loader2 } from "lucide-react";
+import { LayoutDashboard, Users, UserCog, CalendarRange, PieChart, LogOut, Bell, Menu, Tractor, Settings, BarChart3, ShieldAlert, Loader2, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
@@ -31,6 +31,7 @@ const AdminLayout = () => {
     { name: "All Bookings", path: "/admin/bookings", icon: <CalendarRange size={20} /> },
     { name: "Analytics & Reports", path: "/admin/reports", icon: <BarChart3 size={20} /> },
     { name: "Pricing Surveys", path: "/admin/surveys", icon: <PieChart size={20} /> },
+    { name: "Complaints", path: "/admin/complaints", icon: <AlertTriangle size={20} /> },
   ];
 
   const handleLogout = () => {

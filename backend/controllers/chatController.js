@@ -5,7 +5,28 @@ const db = require("../config/db");
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = "llama-3.1-8b-instant";
 
-const getSystemPrompt = (userContext, servicesContext) => `You are KisanSeevaBot, a friendly and knowledgeable AI assistant for the KisanSeeva platform — an Indian agricultural services marketplace.
+const LANGUAGE_NAMES = {
+  te: "Telugu (తెలుగు)",
+  hi: "Hindi (हिंदी)",
+  ta: "Tamil (தமிழ்)",
+  kn: "Kannada (ಕನ್ನಡ)",
+  mr: "Marathi (మరాఠీ)",
+  bn: "Bengali (বাংলা)",
+  en: "English",
+};
+
+const getSystemPrompt = (userContext, servicesContext, language) => {
+  const langName = LANGUAGE_NAMES[language] || "English";
+  const langInstruction = language && language !== "en"
+    ? `\n---
+CRITICAL LOCAL LANGUAGE MANDATE:
+The user has selected the language: ${langName}.
+You MUST write your entire response in ${langName} using native script (for example: Telugu script for Telugu, Devanagari for Hindi, Tamil script for Tamil).
+Do NOT write your response in English. Format all greetings, explanations, questions, and agricultural advice in ${langName}.
+Ensure the special [BOOKING_READY: ...] tag at the end remains valid JSON.`
+    : "";
+
+  return `You are KisanSeevaBot, a friendly and knowledgeable AI assistant for the KisanSeeva platform — an Indian agricultural services marketplace.
 
 About KisanSeeva:
 - KisanSeeva connects local Farmers with Service Providers who offer agricultural machinery on rent (tractors, harvesters, seeders, sprayers, threshers, rotavators, ploughs, etc.)
@@ -26,6 +47,7 @@ ${userContext}
 ---
 AVAILABLE MACHINERY SERVICES CURRENTLY LISTED:
 ${servicesContext}
+${langInstruction}
 
 ---
 BOOKING SERVICE ASSISTANCE RULES (CRITICAL):
@@ -36,19 +58,20 @@ BOOKING SERVICE ASSISTANCE RULES (CRITICAL):
      - Booking Date (ask the user for the date if not specified. Accept natural language like "tomorrow", "next Monday" or dates like "July 15th")
      - Hours Required (duration of the booking, must be a number)
      - Farm Location/Address (full text address of their farm)
-  3. If any of these 4 details are missing, ask for them politely one by one. Do not ask for all at once to keep it simple.
+  3. If any of these 4 details are missing, ask for them politely one by one in ${langName}. Do not ask for all at once to keep it simple.
   4. Once you have gathered all 4 details:
-     - Output a response summarizing the booking details.
+     - Output a response summarizing the booking details in ${langName}.
      - At the very end of your response, append the following exact JSON block tag (ensure it is valid JSON):
        [BOOKING_READY: {"serviceId": SERVICE_ID_NUMBER, "date": "YYYY-MM-DD", "location": "FARM_LOCATION", "hours": HOURS_NUMBER}]
        Replace SERVICE_ID_NUMBER, YYYY-MM-DD, FARM_LOCATION, and HOURS_NUMBER with the actual values you gathered. (Calculate YYYY-MM-DD based on today's date if they say "tomorrow" or similar).
        Example: [BOOKING_READY: {"serviceId": 3, "date": "2026-07-15", "location": "Village Pipariya near Mandi", "hours": 4}]
      - Ask the user to confirm by saying "confirm" or clicking the confirm button.
 
-Keep responses under 200 words. Respond in a warm, helpful tone.`;
+Keep responses under 200 words. Respond in a warm, helpful tone in ${langName}.`;
+};
 
 const handleChat = async (req, res) => {
-  const { messages } = req.body;
+  const { messages, language } = req.body;
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ message: "Messages array is required." });
@@ -94,8 +117,8 @@ The user is logged in:
       ).join("\n");
     }
 
-    // 3. Build Full Messages with Dynamic Prompt
-    const dynamicPrompt = getSystemPrompt(userContext, servicesContext);
+    // 3. Build Full Messages with Dynamic Language Prompt
+    const dynamicPrompt = getSystemPrompt(userContext, servicesContext, language);
     const fullMessages = [
       { role: "system", content: dynamicPrompt },
       ...messages.map((m) => ({ role: m.role, content: m.content })),
@@ -134,4 +157,3 @@ The user is logged in:
 };
 
 module.exports = { handleChat };
-

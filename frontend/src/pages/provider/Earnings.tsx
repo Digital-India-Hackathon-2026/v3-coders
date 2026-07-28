@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { IndianRupee, ArrowUpRight, TrendingUp, Calendar, CreditCard } from "lucide-react";
+import { IndianRupee, ArrowUpRight, TrendingUp, Calendar, CreditCard, Tractor } from "lucide-react";
 import { KSCard, KSBadge } from "../../components/ui";
 import API from "../../services/api";
 
@@ -113,6 +113,58 @@ const Earnings = () => {
             <IndianRupee size={28} />
           </div>
         </KSCard>
+      </div>
+
+      {/* Per-machinery Earnings Breakdown */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+          <Tractor size={22} className="text-yellow-600" />
+          Per Machinery Breakdown
+        </h2>
+        {Object.entries(
+          completedJobs.reduce((acc: Record<string, { jobs: typeof completedJobs; revenue: number }>, job) => {
+            if (!acc[job.service_name]) acc[job.service_name] = { jobs: [], revenue: 0 };
+            acc[job.service_name].jobs.push(job);
+            acc[job.service_name].revenue += parseFloat(job.total_price);
+            return acc;
+          }, {})
+        ).length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-100 p-8 text-center text-slate-400">No completed jobs yet.</div>
+        ) : (
+          <div className="grid sm:grid-cols-2 gap-4">
+            {Object.entries(
+              completedJobs.reduce((acc: Record<string, { jobs: typeof completedJobs; revenue: number }>, job) => {
+                if (!acc[job.service_name]) acc[job.service_name] = { jobs: [], revenue: 0 };
+                acc[job.service_name].jobs.push(job);
+                acc[job.service_name].revenue += parseFloat(job.total_price);
+                return acc;
+              }, {})
+            ).map(([machineName, data]) => (
+              <KSCard key={machineName} className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-yellow-100 text-yellow-700 rounded-xl">
+                    <Tractor size={22} />
+                  </div>
+                  <h3 className="font-bold text-slate-800 text-base leading-tight">{machineName}</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-green-50 rounded-xl p-2">
+                    <p className="text-lg font-extrabold text-green-700">₹{data.revenue.toLocaleString('en-IN')}</p>
+                    <p className="text-[10px] font-semibold text-slate-400">Revenue</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-2">
+                    <p className="text-lg font-extrabold text-blue-700">{data.jobs.length}</p>
+                    <p className="text-[10px] font-semibold text-slate-400">Jobs Done</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-xl p-2">
+                    <p className="text-lg font-extrabold text-purple-700">₹{data.jobs.length > 0 ? Math.round(data.revenue / data.jobs.length).toLocaleString('en-IN') : 0}</p>
+                    <p className="text-[10px] font-semibold text-slate-400">Avg/Job</p>
+                  </div>
+                </div>
+              </KSCard>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Transaction History Table */}

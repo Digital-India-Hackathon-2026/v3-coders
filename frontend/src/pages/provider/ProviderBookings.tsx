@@ -2,23 +2,27 @@ import React, { useState, useEffect } from "react";
 import { Check, X, Calendar, MapPin, Tractor, Clock, Navigation } from "lucide-react";
 import { KSCard, KSBadge, KSButton } from "../../components/ui";
 import LiveTrackingModal from "../../components/dashboard/LiveTrackingModal";
+import PublicProfileModal from "../../components/dashboard/PublicProfileModal";
 import API from "../../services/api";
 
 interface Booking {
   id: number;
+  service_name: string;
+  service_type: string;
+  pricing_model?: "hourly" | "fixed";
   farmer_id: number;
-  service_id: number;
+  farmer_name: string;
+  farmer_phone: string;
   booking_date: string;
   hours_required: string;
   total_price: string;
   status: "pending" | "confirmed" | "completed" | "cancelled" | "rejected";
   location: string;
+  timer_status?: "idle" | "running" | "stopped";
+  start_time?: string;
+  actual_hours?: string;
   rating: number | null;
   feedback: string | null;
-  service_name: string;
-  service_type: string;
-  farmer_name: string;
-  farmer_phone: string;
 }
 
 const ProviderBookings = () => {
@@ -26,7 +30,10 @@ const ProviderBookings = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [trackingId, setTrackingId] = useState<number | null>(null);
+  const [viewProfileId, setViewProfileId] = useState<number | null>(null);
   const [filter, setFilter] = useState("all");
+
+  const [timerActionLoading, setTimerActionLoading] = useState<number | null>(null);
 
   const fetchBookings = async () => {
     try {
@@ -36,6 +43,32 @@ const ProviderBookings = () => {
       console.error("Error loading provider bookings", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleStartTimer = async (bookingId: number) => {
+    setTimerActionLoading(bookingId);
+    try {
+      await API.put(`/bookings/${bookingId}/start-timer`);
+      fetchBookings();
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Failed to start timer.");
+    } finally {
+      setTimerActionLoading(null);
+    }
+  };
+
+  const handleStopTimer = async (bookingId: number) => {
+    if (!window.confirm("Are you sure the work is completed? This will stop the timer and calculate the final bill.")) return;
+    setTimerActionLoading(bookingId);
+    try {
+      const res = await API.put(`/bookings/${bookingId}/stop-timer`);
+      alert(`Work completed! Final bill: ₹${parseFloat(res.data.finalPrice).toLocaleString("en-IN")} (${res.data.actualHours} hrs actual time).`);
+      fetchBookings();
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Failed to stop timer.");
+    } finally {
+      setTimerActionLoading(null);
     }
   };
 
@@ -138,13 +171,58 @@ const ProviderBookings = () => {
                   </div>
                   <p className="text-sm text-slate-600">
                     Farmer: <span className="font-bold text-slate-800">{b.farmer_name}</span> ({b.farmer_phone})
+                    {(b.status === 'confirmed' || b.status === 'completed') && (
+                      <button
+                        onClick={() => setViewProfileId(b.farmer_id)}
+                        className="text-xs text-blue-600 underline hover:text-blue-800 font-semibold ml-2"
+                      >
+                        View Farmer Profile →
+                      </button>
+                    )}
                   </p>
                   <div className="flex flex-wrap gap-x-6 gap-y-2 mt-2 text-xs font-medium text-slate-400">
                     <span className="flex items-center gap-1"><Calendar size={14} /> {formatSQLDate(b.booking_date)}</span>
                     <span className="flex items-center gap-1"><MapPin size={14} /> {b.location}</span>
-                    <span>Duration: {b.hours_required} hrs</span>
-                    <span>Estimated Payout: <span className="font-bold text-slate-700">₹{parseFloat(b.total_price).toLocaleString("en-IN")}</span></span>
+                    <span>Billing Mode: <strong className={b.pricing_model === "fixed" ? "text-purple-600" : "text-blue-600"}>{b.pricing_model === "fixed" ? "🔧 Fixed Service Charge" : "⏱️ Hourly Timer"}</strong></span>
+                    {b.actual_hours ? (
+                      <span>Actual Duration: <strong className="text-green-700 font-bold">{b.actual_hours} hrs</strong></span>
+                    ) : (
+                      <span>Estimated Duration: {b.hours_required} hrs</span>
+                    )}
+                    <span>Total Payout: <span className="font-extrabold text-slate-800 text-sm">₹{parseFloat(b.total_price).toLocaleString("en-IN")}</span></span>
                   </div>
+
+                  {/* Provider Live Timer Controls */}
+                  {b.status === "confirmed" && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-3">
+                      {b.timer_status === "running" ? (
+                        <>
+                          <span className="flex items-center gap-1.5 text-emerald-600 animate-pulse text-xs font-bold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                            ⏱️ Work Timer Running (Started at {b.start_time ? new Date(b.start_time).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' }) : "now"})
+                          </span>
+                          <button
+                            onClick={() => handleStopTimer(b.id)}
+                            disabled={timerActionLoading === b.id}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition shadow-sm cursor-pointer"
+                          >
+                            ⏹️ Stop Timer & Complete Work
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500 text-xs">Work Status:</span>
+                          <button
+                            onClick={() => handleStartTimer(b.id)}
+                            disabled={timerActionLoading === b.id}
+                            className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition shadow-sm cursor-pointer"
+                          >
+                            ▶️ Start Work Timer
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -201,6 +279,11 @@ const ProviderBookings = () => {
           bookingId={trackingId}
           role="provider"
         />
+      )}
+
+      {/* Public Profile Modal */}
+      {viewProfileId && (
+        <PublicProfileModal userId={viewProfileId} onClose={() => setViewProfileId(null)} />
       )}
     </div>
   );

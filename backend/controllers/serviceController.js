@@ -36,16 +36,18 @@ const getProviderServices = async (req, res) => {
 
 // Create a new service listing (provider only)
 const createService = async (req, res) => {
-  const { name, type, pricePerHour, description } = req.body;
+  const { name, type, pricePerHour, description, pricingModel } = req.body;
 
   if (!name || !type || !pricePerHour) {
     return res.status(400).json({ message: "Please provide service name, type, and price per hour." });
   }
 
+  const model = pricingModel === "fixed" ? "fixed" : "hourly";
+
   try {
     const insertQuery = `
-      INSERT INTO services (provider_id, name, type, price_per_hour, description, status) 
-      VALUES ($1, $2, $3, $4, $5, 'available') 
+      INSERT INTO services (provider_id, name, type, price_per_hour, description, status, pricing_model) 
+      VALUES ($1, $2, $3, $4, $5, 'available', $6) 
       RETURNING *
     `;
     const result = await db.query(insertQuery, [
@@ -53,7 +55,8 @@ const createService = async (req, res) => {
       name,
       type,
       pricePerHour,
-      description || ""
+      description || "",
+      model
     ]);
 
     res.status(201).json({
@@ -69,11 +72,13 @@ const createService = async (req, res) => {
 // Update an existing service listing (provider owner only)
 const updateService = async (req, res) => {
   const { id } = req.params;
-  const { name, type, pricePerHour, description, status } = req.body;
+  const { name, type, pricePerHour, description, status, pricingModel } = req.body;
 
   if (!name || !type || !pricePerHour || !status) {
     return res.status(400).json({ message: "Required fields: name, type, price per hour, status." });
   }
+
+  const model = pricingModel === "fixed" ? "fixed" : "hourly";
 
   try {
     // Check ownership
@@ -88,8 +93,8 @@ const updateService = async (req, res) => {
 
     const updateQuery = `
       UPDATE services 
-      SET name = $1, type = $2, price_per_hour = $3, description = $4, status = $5 
-      WHERE id = $6 
+      SET name = $1, type = $2, price_per_hour = $3, description = $4, status = $5, pricing_model = $6
+      WHERE id = $7 
       RETURNING *
     `;
     const result = await db.query(updateQuery, [
@@ -98,6 +103,7 @@ const updateService = async (req, res) => {
       pricePerHour,
       description || "",
       status,
+      model,
       id
     ]);
 

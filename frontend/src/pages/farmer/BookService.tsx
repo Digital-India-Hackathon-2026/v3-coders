@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Tractor, Droplets, Combine, Sprout, Truck, Sparkles, MapPin, Calendar, CreditCard, User, CheckCircle } from "lucide-react";
+import { Tractor, Droplets, Combine, Sprout, Truck, Sparkles, MapPin, Calendar, CreditCard, User, CheckCircle, AlertCircle } from "lucide-react";
 import { KSCard, KSButton, KSModal } from "../../components/ui";
-import { APIProvider, Map, AdvancedMarker, Pin } from "@vis.gl/react-google-maps";
 import API from "../../services/api";
-
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
 interface Service {
   id: number;
@@ -13,6 +10,7 @@ interface Service {
   name: string;
   type: string;
   price_per_hour: string;
+  pricing_model?: "hourly" | "fixed";
   description: string;
   status: string;
   provider_name: string;
@@ -77,7 +75,11 @@ const BookService = () => {
       navigate("/farmer/bookings");
     } catch (err: any) {
       console.error("Booking error", err);
-      alert(err.response?.data?.message || "Booking request failed. Please try again.");
+      if (err.response?.status === 403) {
+        alert("Access denied: Your session may have the wrong role.\n\nPlease logout and log back in as a Farmer.");
+      } else {
+        alert(err.response?.data?.message || "Booking request failed. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -101,6 +103,9 @@ const BookService = () => {
 
   const getEstimatedCost = () => {
     if (!selectedService) return 0;
+    if (selectedService.pricing_model === "fixed") {
+      return parseFloat(selectedService.price_per_hour);
+    }
     return parseFloat(selectedService.price_per_hour) * parseFloat(hours || "0");
   };
 
@@ -156,7 +161,7 @@ const BookService = () => {
                         {getTypeIcon(service.type)}
                       </div>
                       <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                        ₹{parseFloat(service.price_per_hour).toLocaleString("en-IN")}/hr
+                        ₹{parseFloat(service.price_per_hour).toLocaleString("en-IN")}{service.pricing_model === "fixed" ? " (Fixed)" : "/hr"}
                       </span>
                     </div>
                     <div>
@@ -192,7 +197,9 @@ const BookService = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Hours Required</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  {selectedService?.pricing_model === "fixed" ? "Estimated Work Duration" : "Hours Required"}
+                </label>
                 <input
                   type="number"
                   value={hours}
@@ -201,6 +208,11 @@ const BookService = () => {
                   className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-700/20 focus:border-green-700 transition"
                   required
                 />
+                {selectedService?.pricing_model === "fixed" && (
+                  <p className="text-[11px] text-purple-600 font-semibold mt-1">
+                    🔧 Fixed Price Service — Final bill will be fixed at ₹{parseFloat(selectedService.price_per_hour).toLocaleString("en-IN")} regardless of hours.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -238,29 +250,21 @@ const BookService = () => {
                 required
               />
 
-              {/* Google Maps Mini Preview */}
+              {/* OpenStreetMap preview — free, no billing required */}
               {farmLat && farmLng && (
-                <div className="mt-3 rounded-2xl overflow-hidden border-2 border-green-200 shadow-md" style={{ height: "200px" }}>
+                <div className="mt-3 rounded-2xl overflow-hidden border-2 border-green-200 shadow-md">
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border-b border-green-100">
                     <CheckCircle size={14} className="text-green-600" />
                     <span className="text-xs font-bold text-green-700">
                       Farm Location Pinned: {farmLat.toFixed(5)}, {farmLng.toFixed(5)}
                     </span>
                   </div>
-                  <APIProvider apiKey={GOOGLE_MAPS_KEY}>
-                    <Map
-                      defaultCenter={{ lat: farmLat, lng: farmLng }}
-                      defaultZoom={15}
-                      mapId="kisanseeva-pin-preview"
-                      gestureHandling="none"
-                      disableDefaultUI={true}
-                      style={{ width: "100%", height: "155px" }}
-                    >
-                      <AdvancedMarker position={{ lat: farmLat, lng: farmLng }}>
-                        <Pin background="#16a34a" borderColor="#15803d" glyphColor="#fff" glyph="🌾" scale={1.2} />
-                      </AdvancedMarker>
-                    </Map>
-                  </APIProvider>
+                  <iframe
+                    title="Farm Location"
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${(farmLng - 0.006).toFixed(6)}%2C${(farmLat - 0.006).toFixed(6)}%2C${(farmLng + 0.006).toFixed(6)}%2C${(farmLat + 0.006).toFixed(6)}&layer=mapnik&marker=${farmLat.toFixed(6)}%2C${farmLng.toFixed(6)}`}
+                    style={{ border: 0, width: "100%", height: "180px" }}
+                    loading="lazy"
+                  />
                 </div>
               )}
             </div>

@@ -28,6 +28,10 @@ interface AuthContextType {
     role: string;
     password: string;
     extraInfo: string;
+    lat?: number;
+    lng?: number;
+    addressCity?: string;
+    addressState?: string;
   }) => Promise<{ user: User; message: string }>;
   logout: () => void;
   updateUserProfile: (data: { name: string; phone: string; extraInfo: string }) => Promise<User>;
@@ -83,6 +87,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     role: string;
     password: string;
     extraInfo: string;
+    lat?: number;
+    lng?: number;
+    addressCity?: string;
+    addressState?: string;
   }): Promise<{ user: User; message: string }> => {
     try {
       const res = await API.post("/auth/register", data);

@@ -1,14 +1,18 @@
 import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, Shield, CalendarRange, User, LogOut, Bell, Menu, Tractor, DollarSign, BarChart3, Loader2 } from "lucide-react";
+import { LayoutDashboard, Shield, CalendarRange, User, LogOut, Bell, Menu, Tractor, DollarSign, BarChart3, Loader2, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import NotificationDropdown from "../components/ui/NotificationDropdown";
+import LanguageSelector from "../components/common/LanguageSelector";
+
+import { useLanguage } from "../context/LanguageContext";
 
 const ProviderLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
   const navigate = useNavigate();
   const { user, loading, logout } = useAuth();
+  const { t } = useLanguage();
 
   if (loading) {
     return (
@@ -27,12 +31,13 @@ const ProviderLayout = () => {
   }
 
   const menuItems = [
-    { name: "Dashboard", path: "/provider", icon: <LayoutDashboard size={20} /> },
-    { name: "My Services", path: "/provider/services", icon: <Tractor size={20} /> },
-    { name: "Manage Bookings", path: "/provider/bookings", icon: <CalendarRange size={20} /> },
-    { name: "My Earnings", path: "/provider/earnings", icon: <DollarSign size={20} /> },
-    { name: "Price Surveys", path: "/provider/surveys", icon: <BarChart3 size={20} /> },
-    { name: "Business Profile", path: "/provider/profile", icon: <User size={20} /> },
+    { name: t("dashboard"), path: "/provider", icon: <LayoutDashboard size={20} /> },
+    { name: t("myMachinery"), path: "/provider/services", icon: <Tractor size={20} /> },
+    { name: t("myBookings"), path: "/provider/bookings", icon: <CalendarRange size={20} /> },
+    { name: t("earnings"), path: "/provider/earnings", icon: <DollarSign size={20} /> },
+    { name: t("priceSurveys"), path: "/provider/surveys", icon: <BarChart3 size={20} /> },
+    { name: t("complaints"), path: "/provider/complaints", icon: <AlertTriangle size={20} /> },
+    { name: t("myProfile"), path: "/provider/profile", icon: <User size={20} /> },
   ];
 
   const handleLogout = () => {
@@ -128,14 +133,15 @@ const ProviderLayout = () => {
             >
               <Menu size={20} />
             </button>
-            <h2 className="text-xl font-bold text-slate-800">Provider Portal</h2>
+            <h2 className="text-xl font-bold text-slate-800">{t("providerPortal")}</h2>
           </div>
 
           <div className="flex items-center gap-6">
+            <LanguageSelector />
             {/* Availability Toggle */}
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-500 hidden sm:inline">
-                {isOnline ? "Accepting Jobs" : "Offline"}
+                {isOnline ? t("acceptingJobs") : t("offline")}
               </span>
               <button
                 onClick={() => setIsOnline(!isOnline)}
@@ -155,7 +161,7 @@ const ProviderLayout = () => {
             <NotificationDropdown />
 
             {/* Profile Brief */}
-            <div className="flex items-center gap-3 border-l border-slate-100 pl-4">
+            <Link to="/provider/profile" className="flex items-center gap-3 border-l border-slate-100 pl-4 hover:opacity-80 transition">
               {user?.documents?.selfie ? (
                 <img 
                   src={user.documents.selfie} 
@@ -171,7 +177,7 @@ const ProviderLayout = () => {
                 <p className="text-sm font-semibold text-slate-800">{user?.name || "Provider"}</p>
                 <p className="text-xs text-slate-400">Owner (Verified)</p>
               </div>
-            </div>
+            </Link>
           </div>
         </header>
 

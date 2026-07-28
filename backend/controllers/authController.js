@@ -5,7 +5,7 @@ require("dotenv").config();
 
 // Register a new user
 const register = async (req, res) => {
-  const { name, email, password, phone, role, extraInfo } = req.body;
+  const { name, email, password, phone, role, extraInfo, lat, lng, addressCity, addressState } = req.body;
 
   if (!name || !email || !password || !phone || !role) {
     return res.status(400).json({ message: "Please fill in all required fields." });
@@ -24,9 +24,9 @@ const register = async (req, res) => {
 
     // Insert user into DB
     const insertQuery = `
-      INSERT INTO users (name, email, password, phone, role, extra_info) 
-      VALUES ($1, $2, $3, $4, $5, $6) 
-      RETURNING id, name, email, phone, role, extra_info, status, created_at
+      INSERT INTO users (name, email, password, phone, role, extra_info, lat, lng, address_city, address_state) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
+      RETURNING id, name, email, phone, role, extra_info, status, lat, lng, address_city, address_state, created_at
     `;
     const result = await db.query(insertQuery, [
       name,
@@ -34,7 +34,11 @@ const register = async (req, res) => {
       hashedPassword,
       phone,
       role,
-      extraInfo || ""
+      extraInfo || "",
+      lat || null,
+      lng || null,
+      addressCity || "",
+      addressState || ""
     ]);
 
     const newUser = result.rows[0];
@@ -347,11 +351,74 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const getPublicProfile = async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Fetch user — allow viewing any non-pending user (active/suspended both OK for booking partners)
+    const userRes = await db.query(
+      `SELECT id, name, phone, role, extra_info, documents, created_at, address_city, address_state, status
+       FROM users WHERE id = $1 AND status != 'pending'`,
+      [id]
+    );
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ message: 'User profile not found or still pending approval.' });
+    }
+    const user = userRes.rows[0];
+
+    // Ratings/reviews
+    let reviews = [];
+    if (user.role === 'provider') {
+      const reviewsRes = await db.query(`
+        SELECT b.rating, b.feedback, b.booking_date, u.name as reviewer_name
+        FROM bookings b
+        JOIN users u ON b.farmer_id = u.id
+        JOIN services s ON b.service_id = s.id
+        WHERE s.provider_id = $1 AND b.rating IS NOT NULL
+        ORDER BY b.created_at DESC LIMIT 10
+      `, [id]);
+      reviews = reviewsRes.rows;
+    } else if (user.role === 'farmer') {
+      const reviewsRes = await db.query(`
+        SELECT b.rating, b.feedback, b.booking_date, u.name as reviewer_name, s.name as service_name
+        FROM bookings b
+        JOIN services s ON b.service_id = s.id
+        JOIN users u ON s.provider_id = u.id
+        WHERE b.farmer_id = $1 AND b.rating IS NOT NULL
+        ORDER BY b.created_at DESC LIMIT 10
+      `, [id]);
+      reviews = reviewsRes.rows;
+    }
+
+    // Services (provider only)
+    let services = [];
+    if (user.role === 'provider') {
+      const servicesRes = await db.query(
+        `SELECT id, name, type, price_per_hour, pricing_model, description, status
+         FROM services WHERE provider_id = $1 AND status = 'available'`,
+        [id]
+      );
+      services = servicesRes.rows;
+    }
+
+    const avgRating = reviews.length > 0
+      ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
+      : null;
+
+    res.json({ user: { ...user, extraInfo: user.extra_info }, reviews, services, avgRating });
+  } catch (error) {
+    console.error('Get Public Profile Error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+
+
 module.exports = {
   register,
   login,
   getProfile,
   updateProfile,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  getPublicProfile
 };

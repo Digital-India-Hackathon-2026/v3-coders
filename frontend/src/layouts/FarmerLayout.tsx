@@ -1,13 +1,17 @@
 import { Link, NavLink, useNavigate, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, CalendarRange, User, LogOut, Bell, Menu, Tractor, Sprout, BarChart3, Loader2 } from "lucide-react";
+import { LayoutDashboard, CalendarRange, User, LogOut, Bell, Menu, Tractor, Sprout, BarChart3, Loader2, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import NotificationDropdown from "../components/ui/NotificationDropdown";
+import LanguageSelector from "../components/common/LanguageSelector";
+
+import { useLanguage } from "../context/LanguageContext";
 
 const FarmerLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const navigate = useNavigate();
   const { user, loading, logout } = useAuth();
+  const { t } = useLanguage();
 
   if (loading) {
     return (
@@ -26,11 +30,12 @@ const FarmerLayout = () => {
   }
 
   const menuItems = [
-    { name: "Dashboard", path: "/farmer", icon: <LayoutDashboard size={20} /> },
-    { name: "Book Service", path: "/farmer/book", icon: <Sprout size={20} /> },
-    { name: "My Bookings", path: "/farmer/bookings", icon: <CalendarRange size={20} /> },
-    { name: "Price Surveys", path: "/farmer/surveys", icon: <BarChart3 size={20} /> },
-    { name: "My Profile", path: "/farmer/profile", icon: <User size={20} /> },
+    { name: t("dashboard"), path: "/farmer", icon: <LayoutDashboard size={20} /> },
+    { name: t("bookService"), path: "/farmer/book", icon: <Sprout size={20} /> },
+    { name: t("myBookings"), path: "/farmer/bookings", icon: <CalendarRange size={20} /> },
+    { name: t("priceSurveys"), path: "/farmer/surveys", icon: <BarChart3 size={20} /> },
+    { name: t("complaints"), path: "/farmer/complaints", icon: <AlertTriangle size={20} /> },
+    { name: t("myProfile"), path: "/farmer/profile", icon: <User size={20} /> },
   ];
 
   const handleLogout = () => {
@@ -111,7 +116,7 @@ const FarmerLayout = () => {
             className="flex items-center gap-4 px-4 py-3 rounded-2xl w-full text-red-600 hover:bg-red-50 transition"
           >
             <LogOut size={20} />
-            {isSidebarOpen && <span className="font-semibold">Logout</span>}
+            {isSidebarOpen && <span className="font-semibold">{t("logout")}</span>}
           </button>
         </div>
       </aside>
@@ -127,15 +132,18 @@ const FarmerLayout = () => {
             >
               <Menu size={20} />
             </button>
-            <h2 className="text-xl font-bold text-slate-800">Farmer Portal</h2>
+            <h2 className="text-xl font-bold text-slate-800">{t("farmerPortal")}</h2>
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Language Selector */}
+            <LanguageSelector />
+            
             {/* Notification Bell */}
             <NotificationDropdown />
 
             {/* Profile Brief */}
-            <div className="flex items-center gap-3 border-l border-slate-100 pl-4">
+            <Link to="/farmer/profile" className="flex items-center gap-3 border-l border-slate-100 pl-4 hover:opacity-80 transition">
               {user?.documents?.selfie ? (
                 <img 
                   src={user.documents.selfie} 
@@ -151,7 +159,7 @@ const FarmerLayout = () => {
                 <p className="text-sm font-semibold text-slate-800">{user?.name || "Farmer"}</p>
                 <p className="text-xs text-slate-400">{userLocation}</p>
               </div>
-            </div>
+            </Link>
           </div>
         </header>
 

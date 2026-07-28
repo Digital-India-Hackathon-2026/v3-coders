@@ -1,11 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { APIProvider, Map, useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
 import { X, Navigation, LocateFixed, MapPin, Loader } from "lucide-react";
 import API from "../../services/api";
 import { KSButton } from "../ui";
-
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
-const GOOGLE_MAPS_MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string || "DEMO_MAP_ID";
 
 interface LatLng { lat: number; lng: number; }
 
@@ -16,91 +12,6 @@ interface Props {
   role: "farmer" | "provider";
 }
 
-// Inner component that has access to the map instance
-const MapMarkers: React.FC<{
-  farmLocation: LatLng | null;
-  providerLocation: LatLng | null;
-  userLocation: LatLng | null;
-}> = ({ farmLocation, providerLocation, userLocation }) => {
-  const map = useMap();
-  const markerLib = useMapsLibrary("marker");
-
-  useEffect(() => {
-    if (!map || !markerLib) return;
-    const { AdvancedMarkerElement } = markerLib as any;
-    if (!AdvancedMarkerElement) return;
-
-    const markers: any[] = [];
-
-    // Farm marker — green with 🌾
-    if (farmLocation) {
-      const el = document.createElement("div");
-      el.style.cssText = `
-        background: #16a34a; color: white; font-size: 22px;
-        border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
-        width: 44px; height: 44px; display: flex; align-items: center;
-        justify-content: center; border: 3px solid #15803d;
-        box-shadow: 0 4px 12px rgba(22,163,74,0.5);
-        cursor: pointer;
-      `;
-      const inner = document.createElement("span");
-      inner.style.transform = "rotate(45deg)";
-      inner.textContent = "🌾";
-      el.appendChild(inner);
-
-      const m = new AdvancedMarkerElement({ map, position: farmLocation, content: el, title: "Farm Location" });
-      markers.push(m);
-    }
-
-    // Provider / tractor marker — blue with 🚜
-    if (providerLocation) {
-      const el = document.createElement("div");
-      el.style.cssText = `
-        background: #2563eb; color: white; font-size: 22px;
-        border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
-        width: 44px; height: 44px; display: flex; align-items: center;
-        justify-content: center; border: 3px solid #1d4ed8;
-        box-shadow: 0 4px 12px rgba(37,99,235,0.5);
-        cursor: pointer;
-      `;
-      const inner = document.createElement("span");
-      inner.style.transform = "rotate(45deg)";
-      inner.textContent = "🚜";
-      el.appendChild(inner);
-
-      const m = new AdvancedMarkerElement({ map, position: providerLocation, content: el, title: "Service Provider" });
-      markers.push(m);
-    }
-
-    // User's current position marker — pulsing blue dot
-    if (userLocation && !providerLocation) {
-      const el = document.createElement("div");
-      el.style.cssText = `
-        width: 20px; height: 20px; border-radius: 50%;
-        background: #3b82f6; border: 3px solid white;
-        box-shadow: 0 0 0 6px rgba(59,130,246,0.25);
-        animation: pulse 2s infinite;
-      `;
-      const m = new AdvancedMarkerElement({ map, position: userLocation, content: el, title: "Your Location" });
-      markers.push(m);
-    }
-
-    return () => markers.forEach(m => { m.map = null; });
-  }, [map, markerLib, farmLocation, providerLocation, userLocation]);
-
-  // Pan & zoom to most relevant location
-  useEffect(() => {
-    if (!map) return;
-    const target = providerLocation || farmLocation || userLocation;
-    if (target) {
-      map.panTo(target);
-      map.setZoom(18);
-    }
-  }, [map, farmLocation, providerLocation, userLocation]);
-
-  return null;
-};
-
 const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }) => {
   const [farmLocation, setFarmLocation] = useState<LatLng | null>(null);
   const [providerLocation, setProviderLocation] = useState<LatLng | null>(null);
@@ -109,7 +20,6 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
   const [watchId, setWatchId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
-  const [mapError, setMapError] = useState(false);
 
   // Get user's current location on open
   useEffect(() => {
@@ -136,7 +46,7 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
       if (data.provider_lat && data.provider_lng) {
         setProviderLocation({ lat: parseFloat(data.provider_lat), lng: parseFloat(data.provider_lng) });
       }
-    } catch (err) {
+    } catch {
       setError("Could not load tracking data.");
     }
   }, [bookingId]);
@@ -200,9 +110,22 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
 
   if (!isOpen) return null;
 
-  const defaultCenter = { lat: 20.5937, lng: 78.9629 }; // India fallback
-  const initialCenter = userLocation || farmLocation || providerLocation || defaultCenter;
-  const initialZoom = userLocation || farmLocation || providerLocation ? 18 : 5;
+  // Choose which location to center the map on
+  const mapCenter = providerLocation || farmLocation || userLocation;
+
+  // Build OpenStreetMap embed URL with markers
+  const buildMapUrl = () => {
+    if (!mapCenter) return null;
+    const { lat, lng } = mapCenter;
+    const delta = 0.01;
+    const bbox = `${(lng - delta).toFixed(6)}%2C${(lat - delta).toFixed(6)}%2C${(lng + delta).toFixed(6)}%2C${(lat + delta).toFixed(6)}`;
+    // Show provider location as the marker (most relevant), fallback to farm
+    const markerLoc = providerLocation || farmLocation;
+    const markerParam = markerLoc ? `&marker=${markerLoc.lat.toFixed(6)}%2C${markerLoc.lng.toFixed(6)}` : "";
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik${markerParam}`;
+  };
+
+  const mapUrl = buildMapUrl();
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
@@ -240,7 +163,7 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
               : <><MapPin size={13} /> Press "Start Journey" to begin sharing your real-time location with the farmer</>
           ) : (
             providerLocation
-              ? <><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" /> Provider is en route — map auto‑refreshes every 10 s</>
+              ? <><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" /> Provider is en route — map auto‑refreshes every 10 s</>
               : <><MapPin size={13} /> Waiting for provider to start their journey and share location...</>
           )}
         </div>
@@ -251,8 +174,8 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
           </div>
         )}
 
-        {/* Map */}
-        <div className="flex-1 relative">
+        {/* Map Area */}
+        <div className="flex-1 relative bg-slate-100">
           {gpsLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-sm">
               <div className="flex flex-col items-center gap-3 text-slate-500">
@@ -261,39 +184,41 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
               </div>
             </div>
           )}
-          <APIProvider
-            apiKey={GOOGLE_MAPS_KEY}
-            onLoad={() => setMapError(false)}
-            onError={() => setMapError(true)}
-          >
-            {mapError ? (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-slate-50">
-                <div className="text-5xl">🗺️</div>
-                <div className="text-center">
-                  <p className="font-bold text-slate-700 text-lg">Maps could not load</p>
-                  <p className="text-sm text-slate-500 mt-1 max-w-xs">
-                    The Google Maps API key is not authorized for this URL.
-                    Add <code className="bg-slate-200 px-1 rounded text-xs">http://localhost:5173/*</code> to your
-                    key's HTTP referrers in Google Cloud Console.
-                  </p>
-                </div>
+
+          {mapUrl ? (
+            <iframe
+              key={`${providerLocation?.lat}-${providerLocation?.lng}`}
+              title="Live Location Map"
+              src={mapUrl}
+              style={{ border: 0, width: "100%", height: "100%" }}
+              loading="lazy"
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-slate-50">
+              <div className="text-5xl">🗺️</div>
+              <div className="text-center">
+                <p className="font-bold text-slate-700 text-lg">Waiting for location data</p>
+                <p className="text-sm text-slate-500 mt-1 max-w-xs">
+                  {role === "provider"
+                    ? "Click \"Start Journey\" to begin broadcasting your location."
+                    : "The map will appear once the provider shares their location."}
+                </p>
               </div>
-            ) : (
-              <Map
-                defaultCenter={initialCenter}
-                defaultZoom={initialZoom}
-                gestureHandling="greedy"
-                mapId={GOOGLE_MAPS_MAP_ID}
-                style={{ width: "100%", height: "100%" }}
-              >
-                <MapMarkers
-                  farmLocation={farmLocation}
-                  providerLocation={providerLocation}
-                  userLocation={userLocation}
-                />
-              </Map>
-            )}
-          </APIProvider>
+              {/* Coordinates info panels */}
+              <div className="flex gap-3 mt-2 text-xs">
+                {farmLocation && (
+                  <div className="bg-green-50 border border-green-100 rounded-xl px-3 py-2 text-green-700 font-semibold">
+                    🌾 Farm: {farmLocation.lat.toFixed(4)}, {farmLocation.lng.toFixed(4)}
+                  </div>
+                )}
+                {userLocation && (
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-blue-700 font-semibold">
+                    📍 You: {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Legend & Controls */}
@@ -315,6 +240,7 @@ const LiveTrackingModal: React.FC<Props> = ({ isOpen, onClose, bookingId, role }
                 <span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> 🚜 Provider Location
               </span>
             )}
+            <span className="text-slate-400 italic">Powered by OpenStreetMap</span>
           </div>
 
           <div className="flex gap-3">

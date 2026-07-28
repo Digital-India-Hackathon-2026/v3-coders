@@ -48,6 +48,40 @@ const createBooking = async (req, res) => {
     const notifMessage = `New booking request received for ${service.name} on ${bookingDate}.`;
     await db.query(notifQuery, [service.provider_id, notifMessage]);
 
+    // --- Proximity Notification: Notify all providers within 20km ---
+    if (farmLat && farmLng) {
+      try {
+        // Haversine formula in SQL
+        const nearbyProviders = await db.query(`
+          SELECT DISTINCT u.id, u.name
+          FROM users u
+          JOIN services s ON s.provider_id = u.id
+          WHERE u.role = 'provider'
+            AND u.status = 'active'
+            AND s.status = 'available'
+            AND u.lat IS NOT NULL AND u.lng IS NOT NULL
+            AND (
+              6371 * acos(
+                cos(radians($1)) * cos(radians(u.lat)) *
+                cos(radians(u.lng) - radians($2)) +
+                sin(radians($1)) * sin(radians(u.lat))
+              )
+            ) <= 20
+        `, [farmLat, farmLng]);
+        
+        for (const provider of nearbyProviders.rows) {
+          // Skip the provider who was already directly notified
+          if (provider.id === service.provider_id) continue;
+          const msg = `📍 New booking request nearby! A farmer in your area (${location}) needs ${service.name} on ${bookingDate}. Check the platform to offer your services.`;
+          await db.query('INSERT INTO notifications (user_id, message) VALUES ($1, $2)', [provider.id, msg]);
+        }
+        console.log(`✅ Notified ${nearbyProviders.rows.length} nearby providers within 20km.`);
+      } catch (proxErr) {
+        console.error('Proximity notification error (non-fatal):', proxErr.message);
+      }
+    }
+    // --- End Proximity Notification ---
+
     res.status(201).json({
       message: "Booking request submitted successfully.",
       booking: result.rows[0]
@@ -59,11 +93,13 @@ const createBooking = async (req, res) => {
   }
 };
 
-// Get bookings requested by the logged-in farmer
 const getFarmerBookings = async (req, res) => {
   try {
     const query = `
-      SELECT b.*, s.name as service_name, s.type as service_type, s.price_per_hour, u.name as provider_name, u.phone as provider_phone 
+      SELECT b.*, s.name as service_name, s.type as service_type, s.price_per_hour, 
+             COALESCE(s.pricing_model, 'hourly') as pricing_model, 
+             s.provider_id as provider_user_id,
+             u.name as provider_name, u.phone as provider_phone 
       FROM bookings b
       JOIN services s ON b.service_id = s.id
       JOIN users u ON s.provider_id = u.id
@@ -78,11 +114,12 @@ const getFarmerBookings = async (req, res) => {
   }
 };
 
+
 // Get booking requests received by the logged-in provider
 const getProviderBookings = async (req, res) => {
   try {
     const query = `
-      SELECT b.*, s.name as service_name, s.type as service_type, u.name as farmer_name, u.phone as farmer_phone 
+      SELECT b.*, s.name as service_name, s.type as service_type, s.price_per_hour, COALESCE(s.pricing_model, 'hourly') as pricing_model, u.name as farmer_name, u.phone as farmer_phone 
       FROM bookings b
       JOIN services s ON b.service_id = s.id
       JOIN users u ON b.farmer_id = u.id
@@ -123,7 +160,8 @@ const updateBookingStatus = async (req, res) => {
     // Ownership check & transition validation
     if (req.user.role === "farmer") {
       // Farmer can only cancel their own booking, and only if it's pending or confirmed
-      if (booking.farmer_id !== req.user.id) {
+      if (Number(booking.farmer_id) !== Number(req.user.id)) {
+        console.warn(`403 updateBookingStatus: farmer_id ${booking.farmer_id} != user.id ${req.user.id}`);
         return res.status(403).json({ message: "Access forbidden: this booking is not yours." });
       }
       if (status !== "cancelled") {
@@ -134,13 +172,15 @@ const updateBookingStatus = async (req, res) => {
       }
     } else if (req.user.role === "provider") {
       // Provider can confirm, reject, or complete booking
-      if (booking.provider_id !== req.user.id) {
+      if (Number(booking.provider_id) !== Number(req.user.id)) {
+        console.warn(`403 updateBookingStatus: provider_id ${booking.provider_id} != user.id ${req.user.id}`);
         return res.status(403).json({ message: "Access forbidden: you do not provide this service." });
       }
       if (status === "cancelled") {
         return res.status(400).json({ message: "Providers cannot set status to 'cancelled' (use 'rejected' instead)." });
       }
     } else if (req.user.role !== "admin") {
+      console.warn(`403 updateBookingStatus: unhandled role ${req.user.role}`);
       return res.status(403).json({ message: "Access denied." });
     }
 
@@ -182,7 +222,8 @@ const rateBooking = async (req, res) => {
     }
 
     const booking = bookingRes.rows[0];
-    if (booking.farmer_id !== req.user.id) {
+    if (Number(booking.farmer_id) !== Number(req.user.id)) {
+      console.warn(`403 rateBooking: farmer_id ${booking.farmer_id} != user.id ${req.user.id}`);
       return res.status(403).json({ message: "Access forbidden: you cannot rate this booking." });
     }
 
@@ -270,7 +311,8 @@ const payBooking = async (req, res) => {
     const booking = bookingRes.rows[0];
 
     // Ensure requesting user is the farmer who booked it
-    if (booking.farmer_id !== req.user.id) {
+    if (Number(booking.farmer_id) !== Number(req.user.id)) {
+      console.warn(`403 payBooking: farmer_id ${booking.farmer_id} != user.id ${req.user.id}`);
       return res.status(403).json({ message: "Access forbidden: you do not own this booking." });
     }
 
@@ -314,6 +356,116 @@ const payBooking = async (req, res) => {
   }
 };
 
+// Start job timer (Farmer only)
+const startTimer = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const bookingRes = await db.query("SELECT * FROM bookings WHERE id = $1", [id]);
+    if (bookingRes.rows.length === 0) return res.status(404).json({ message: "Booking not found." });
+
+    const booking = bookingRes.rows[0];
+
+    // Fetch service info to check provider_id
+    const serviceRes = await db.query("SELECT provider_id, name FROM services WHERE id = $1", [booking.service_id]);
+    const providerId = serviceRes.rows[0]?.provider_id;
+
+    if (Number(booking.farmer_id) !== Number(req.user.id) && Number(providerId) !== Number(req.user.id)) {
+      console.warn(`403 startTimer: farmer_id=${booking.farmer_id}, providerId=${providerId}, user.id=${req.user.id}`);
+      return res.status(403).json({ message: "Only the farmer or provider assigned to this service can start the work timer." });
+    }
+    if (booking.status !== "confirmed") {
+      return res.status(400).json({ message: "Work timer can only be started for confirmed bookings." });
+    }
+
+    const updateQuery = `
+      UPDATE bookings 
+      SET start_time = NOW(), timer_status = 'running' 
+      WHERE id = $1 
+      RETURNING *
+    `;
+    const result = await db.query(updateQuery, [id]);
+
+    // Notify provider if farmer started timer, or farmer if provider started timer
+    if (serviceRes.rows.length > 0) {
+      const targetUser = Number(req.user.id) === Number(booking.farmer_id) ? providerId : booking.farmer_id;
+      const starterRole = Number(req.user.id) === Number(booking.farmer_id) ? "Farmer" : "Provider";
+      const notifMsg = `⏱️ ${starterRole} has started the work timer for booking KS-${id} (${serviceRes.rows[0].name}).`;
+      await db.query("INSERT INTO notifications (user_id, message) VALUES ($1, $2)", [targetUser, notifMsg]);
+    }
+
+    res.json({ message: "Work timer started successfully.", booking: result.rows[0] });
+  } catch (error) {
+    console.error("Start Timer Error:", error);
+    res.status(500).json({ message: "Server error starting timer." });
+  }
+};
+
+// Stop job timer & auto-recalculate bill based on actual duration (Farmer only)
+const stopTimer = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const query = `
+      SELECT b.*, s.price_per_hour, COALESCE(s.pricing_model, 'hourly') as pricing_model, s.provider_id, s.name as service_name 
+      FROM bookings b
+      JOIN services s ON b.service_id = s.id
+      WHERE b.id = $1
+    `;
+    const bookingRes = await db.query(query, [id]);
+    if (bookingRes.rows.length === 0) return res.status(404).json({ message: "Booking not found." });
+
+    const booking = bookingRes.rows[0];
+
+    if (Number(booking.farmer_id) !== Number(req.user.id) && Number(booking.provider_id) !== Number(req.user.id)) {
+      console.warn(`403 stopTimer: farmer_id=${booking.farmer_id}, provider_id=${booking.provider_id}, user.id=${req.user.id}`);
+      return res.status(403).json({ message: "Only the farmer or provider assigned to this service can stop the work timer." });
+    }
+    if (booking.timer_status !== "running" || !booking.start_time) {
+      return res.status(400).json({ message: "Timer is not currently running for this booking." });
+    }
+
+    const startTime = new Date(booking.start_time);
+    const stopTime = new Date();
+    
+    // Calculate actual elapsed hours (minimum 0.1 hr, i.e., 6 mins)
+    const elapsedMs = stopTime.getTime() - startTime.getTime();
+    let actualHours = parseFloat((elapsedMs / (1000 * 60 * 60)).toFixed(2));
+    if (actualHours < 0.1) actualHours = 0.1;
+
+    let finalPrice = parseFloat(booking.total_price);
+    // If service is hourly, recalculate bill based on actual elapsed time
+    if (booking.pricing_model === "hourly") {
+      finalPrice = parseFloat((actualHours * parseFloat(booking.price_per_hour)).toFixed(2));
+    }
+
+    const updateQuery = `
+      UPDATE bookings 
+      SET stop_time = $1, actual_hours = $2, total_price = $3, timer_status = 'stopped', status = 'completed' 
+      WHERE id = $4 
+      RETURNING *
+    `;
+    const result = await db.query(updateQuery, [stopTime, actualHours, finalPrice, id]);
+
+    // Send notification to the other party
+    const targetUser = Number(req.user.id) === Number(booking.farmer_id) ? booking.provider_id : booking.farmer_id;
+    const stopperRole = Number(req.user.id) === Number(booking.farmer_id) ? "Farmer" : "Provider";
+    const notifMsg = `🏁 Work completed! ${stopperRole} stopped timer for booking KS-${id}. Actual duration: ${actualHours} hrs. Final Bill: ₹${finalPrice.toLocaleString("en-IN")}.`;
+    await db.query("INSERT INTO notifications (user_id, message) VALUES ($1, $2)", [targetUser, notifMsg]);
+
+    res.json({
+      message: "Work timer stopped and job marked as completed.",
+      actualHours,
+      finalPrice,
+      booking: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error("Stop Timer Error:", error);
+    res.status(500).json({ message: "Server error stopping timer." });
+  }
+};
+
 module.exports = {
   createBooking,
   getFarmerBookings,
@@ -322,5 +474,7 @@ module.exports = {
   rateBooking,
   updateProviderLocation,
   getBookingLocation,
-  payBooking
+  payBooking,
+  startTimer,
+  stopTimer
 };

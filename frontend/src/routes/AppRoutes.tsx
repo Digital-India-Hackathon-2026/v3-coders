@@ -34,6 +34,8 @@ import BookingsPage from "../pages/admin/BookingsPage";
 import ReportsPage from "../pages/admin/ReportsPage";
 import SurveyPage from "../pages/admin/SurveyPage";
 import SurveyResponsePage from "../pages/shared/SurveyResponsePage";
+import ComplaintPage from "../pages/shared/ComplaintPage";
+import AdminComplaintsPage from "../pages/admin/AdminComplaintsPage";
 
 function AppRoutes() {
   return (
@@ -52,6 +54,7 @@ function AppRoutes() {
         <Route path="book" element={<BookService />} />
         <Route path="bookings" element={<MyBookings />} />
         <Route path="surveys" element={<SurveyResponsePage />} />
+        <Route path="complaints" element={<ComplaintPage />} />
         <Route path="profile" element={<FarmerProfile />} />
       </Route>
 
@@ -62,6 +65,7 @@ function AppRoutes() {
         <Route path="bookings" element={<ProviderBookings />} />
         <Route path="earnings" element={<Earnings />} />
         <Route path="surveys" element={<SurveyResponsePage />} />
+        <Route path="complaints" element={<ComplaintPage />} />
         <Route path="profile" element={<ProviderProfile />} />
       </Route>
 
@@ -73,6 +77,7 @@ function AppRoutes() {
         <Route path="bookings" element={<BookingsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="surveys" element={<SurveyPage />} />
+        <Route path="complaints" element={<AdminComplaintsPage />} />
       </Route>
     </Routes>
   );

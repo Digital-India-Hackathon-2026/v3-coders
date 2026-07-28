@@ -1,514 +1,582 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { 
-  MessageCircle, X, Send, Bot, User, Loader2, RefreshCw, 
-  ChevronDown, Mic, MicOff, Volume2, VolumeX, Check, AlertCircle, Tractor 
+import {
+  MessageCircle, X, Send, Bot, User, Loader2, RefreshCw,
+  Mic, MicOff, Volume2, VolumeX, Check, Tractor, Phone, PhoneOff
 } from "lucide-react";
 import API from "../../services/api";
+import { useLanguage } from "../../context/LanguageContext";
+import LanguageSelector from "./LanguageSelector";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
+// ─── Types ───────────────────────────────────────────────────────────
+interface Message { role: "user" | "assistant"; content: string; }
+interface BookingDetails { serviceId: number; date: string; location: string; hours: number; }
+
+// ─── Speech Recognition ──────────────────────────────────────────────
+const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+// ─── Localized Prompts ───────────────────────────────────────────────
+const L10N: Record<string, { greeting: string; placeholder: string; suggestions: string[] }> = {
+  en: {
+    greeting: "🌾 Namaste! I'm **KisanSeevaBot**. Ask me anything about farming or booking services!",
+    placeholder: "Ask anything...",
+    suggestions: ["Book a tractor", "What is KisanSeeva?", "How to register?", "Best crops for summer?"]
+  },
+  te: {
+    greeting: "🌾 నమస్కారం! నేను **కిసాన్ సేవా బాట్**. వ్యవసాయం గురించి లేదా సేవలు బుక్ చేయడం గురించి అడగండి!",
+    placeholder: "ఏదైనా అడగండి...",
+    suggestions: ["ట్రాక్టర్ బుక్ చేయి", "కిసాన్ సేవా అంటే ఏమిటి?", "నమోదు ఎలా చేయాలి?", "వేసవి పంటలు?"]
+  },
+  hi: {
+    greeting: "🌾 नमस्ते! मैं **किसान सेवा बॉट** हूँ। खेती या सेवा बुकिंग के बारे में कुछ भी पूछें!",
+    placeholder: "कुछ भी पूछें...",
+    suggestions: ["ट्रैक्टर बुक करें", "किसान सेवा क्या है?", "रजिस्टर कैसे करें?", "गर्मी में फसलें?"]
+  },
+  ta: {
+    greeting: "🌾 வணக்கம்! நான் **கிசான் சேவா போட்**. விவசாயம் அல்லது சேவைகள் பற்றி கேளுங்கள்!",
+    placeholder: "எதையும் கேளுங்கள்...",
+    suggestions: ["டிராக்டர் முன்பதிவு", "கிசான் சேவா என்ன?", "எப்படி பதிவு செய்வது?"]
+  },
+  kn: {
+    greeting: "🌾 ನಮಸ್ಕಾರ! ನಾನು **ಕಿಸಾನ್ ಸೇವಾ ಬಾಟ್**. ಕೃಷಿ ಅಥವಾ ಸೇವಾ ಬುಕಿಂಗ್ ಬಗ್ಗೆ ಕೇಳಿ!",
+    placeholder: "ಏನಾದರೂ ಕೇಳಿ...",
+    suggestions: ["ಟ್ರ್ಯಾಕ್ಟರ್ ಬುಕ್ ಮಾಡಿ", "ಕಿಸಾನ್ ಸೇವಾ ಏನು?"]
+  },
+  mr: {
+    greeting: "🌾 नमस्कार! मी **किसान सेवा बॉट** आहे. शेती किंवा सेवा बुकिंगबद्दल विचारा!",
+    placeholder: "काहीही विचारा...",
+    suggestions: ["ट्रॅक्टर बुक करा", "किसान सेवा म्हणजे काय?"]
+  },
+  bn: {
+    greeting: "🌾 নমস্কার! আমি **কিষান সেবা বট**। কৃষি বা পরিষেবা বুকিং সম্পর্কে জিজ্ঞাসা করুন!",
+    placeholder: "যেকোনো কিছু জিজ্ঞাসা করুন...",
+    suggestions: ["ট্র্যাক্টর বুক করুন", "কিষান সেবা কী?"]
+  }
+};
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\[BOOKING_READY:.*?\]/g, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[`#*_~>[\]()|]/g, " ")
+    .replace(/^[-•]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-interface BookingDetails {
-  serviceId: number;
-  date: string;
-  location: string;
-  hours: number;
+// ─── Backend Proxy TTS (supports Indian languages reliably without CORS) ───────
+function speakWithBackendTTS(text: string, langCode: string): HTMLAudioElement {
+  const clean = stripMarkdown(text).slice(0, 250);
+  if (!clean) return new Audio();
+  const encoded = encodeURIComponent(clean);
+  const backendUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  const url = `${backendUrl}/tts?text=${encoded}&lang=${langCode}`;
+  const audio = new Audio(url);
+  audio.volume = 1.0;
+  return audio;
 }
 
-const SUGGESTED_QUESTIONS = [
-  "I want to book a tractor",
-  "What is KisanSeeva?",
-  "What documents do I need to register?",
-  "How does the pricing survey work?",
-  "What crops grow best in summer?",
-];
-
-const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-const TypingIndicator = () => (
-  <div className="flex items-end gap-2 max-w-[85%]">
-    <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center shrink-0">
-      <Bot size={14} className="text-white" />
-    </div>
-    <div className="bg-white border border-slate-100 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
-      <div className="flex gap-1 items-center h-4">
-        <span className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-        <span className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-        <span className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: "300ms" }} />
-      </div>
-    </div>
-  </div>
-);
-
-function formatMessage(text: string) {
-  // Strip out the [BOOKING_READY] tag for rendering
-  const displayChat = text.replace(/\[BOOKING_READY:.*?\]/, "").trim();
-  return displayChat
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br/>')
-    .replace(/^[-•]\s(.+)/gm, '<span class="block pl-2 border-l-2 border-green-300 my-0.5">$1</span>');
+// ─── Format message to HTML ──────────────────────────────────────────
+function fmt(text: string) {
+  return text
+    .replace(/\[BOOKING_READY:.*?\]/g, "").trim()
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/\n/g, "<br/>");
 }
 
+// ─── Main Component ──────────────────────────────────────────────────
 export default function Chatbot() {
   const navigate = useNavigate();
+  const { currentLanguage } = useLanguage();
+
   const [isOpen, setIsOpen] = useState(false);
+  const [isLiveVoice, setIsLiveVoice] = useState(false);    // fullscreen voice call UI
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [ollamaOffline, setOllamaOffline] = useState(false);
-  const [showScroll, setShowScroll] = useState(false);
-
-  // Speech states
   const [isListening, setIsListening] = useState(false);
-  const [isSpeakingEnabled, setIsSpeakingEnabled] = useState(false);
-  
-  // Pending booking flow state
+  const [isBotSpeaking, setIsBotSpeaking] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState(""); // what user just said
+  const [botReply, setBotReply] = useState("");               // what bot just said
   const [pendingBooking, setPendingBooking] = useState<BookingDetails | null>(null);
   const [bookingStatus, setBookingStatus] = useState<"none" | "submitting" | "success" | "error">("none");
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
+  const recRef = useRef<any>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isLiveRef = useRef(false);
+  isLiveRef.current = isLiveVoice;
 
-  // 1. Initial greeting
+  const l10n = L10N[currentLanguage.code] || L10N.en;
+
+  // ── Initial greeting when opened / language changes ─────────────────
   useEffect(() => {
-    if (isOpen && messages.length === 0) {
-      setMessages([{
-        role: "assistant",
-        content: "🌾 Namaste! I'm **KisanSeevaBot**, your agricultural assistant.\n\nI can speak and book services for you!\n- Try saying: **'I want to book a tractor'**\n- Toggle the 🔊 icon to hear me speak!\n- Click the 🎙️ icon to speak to me!"
-      }]);
-      setTimeout(() => inputRef.current?.focus(), 300);
+    if (isOpen) {
+      setMessages([{ role: "assistant", content: l10n.greeting }]);
     }
-  }, [isOpen]);
+  }, [isOpen, currentLanguage]);
 
-  // Scroll to bottom
+  // ── Auto-scroll ───────────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading, pendingBooking, bookingStatus]);
+  }, [messages, loading]);
 
-  // 2. Initialize Speech Recognition
+  // ── Speech Recognition setup ─────────────────────────────────────
   useEffect(() => {
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = "en-IN"; // Set dialect to Indian English for better local accents
+    if (!SR) return;
+    const rec = new SR();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = currentLanguage.sttCode;
 
-      rec.onstart = () => {
-        setIsListening(true);
-      };
+    rec.onstart = () => setIsListening(true);
+    rec.onend = () => setIsListening(false);
+    rec.onerror = () => {
+      setIsListening(false);
+      if (isLiveRef.current && !isBotSpeaking) restartListening(800);
+    };
+    rec.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      if (transcript) {
+        setVoiceTranscript(transcript);
+        sendMessage(transcript);
+      }
+    };
+    recRef.current = rec;
+  }, [currentLanguage]);
 
-      rec.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript) {
-          setInput(transcript);
-          // Auto submit the user's spoken voice command
-          sendMessage(transcript);
-        }
-      };
+  // ── Restart mic after delay (live mode) ──────────────────────────
+  const restartListening = (delay = 600) => {
+    setTimeout(() => {
+      if (isLiveRef.current && recRef.current) {
+        try { recRef.current.start(); } catch {}
+      }
+    }, delay);
+  };
 
-      rec.onerror = () => {
-        setIsListening(false);
-      };
-
-      rec.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = rec;
+  // ── TTS via Backend Proxy ──────────────────────────────────────────
+  const speak = useCallback((text: string, onDone?: () => void) => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
     }
-  }, [messages]);
+    const targetLang = currentLanguage.sttCode.split("-")[0];
+    const audio = speakWithBackendTTS(text, targetLang);
+    audioRef.current = audio;
+    setIsBotSpeaking(true);
 
-  const toggleListen = () => {
-    if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.");
-      return;
-    }
+    audio.play().catch(() => {
+      // Fallback to Web Speech API if audio element fails
+      window.speechSynthesis.cancel();
+      const cleanText = text
+        .replace(/\[BOOKING_READY:.*?\]/g, "")
+        .replace(/\*\*/g, "")
+        .replace(/\*/g, "")
+        .trim()
+        .slice(0, 200);
+      const utt = new SpeechSynthesisUtterance(cleanText);
+      utt.lang = currentLanguage.sttCode;
+      
+      const voices = window.speechSynthesis.getVoices();
+      const matchedVoice = voices.find(
+        (v) => v.lang.startsWith(targetLang) || v.lang.includes(targetLang)
+      );
+      if (matchedVoice) {
+        utt.voice = matchedVoice;
+      }
+      utt.rate = 1.0;
+      utt.onend = () => { setIsBotSpeaking(false); onDone?.(); };
+      utt.onerror = () => { setIsBotSpeaking(false); onDone?.(); };
+      window.speechSynthesis.speak(utt);
+    });
+
+    audio.onended = () => {
+      setIsBotSpeaking(false);
+      onDone?.();
+    };
+    audio.onerror = () => {
+      // Fallback to Web Speech API on audio load error
+      window.speechSynthesis.cancel();
+      const cleanText = text
+        .replace(/\[BOOKING_READY:.*?\]/g, "")
+        .replace(/\*\*/g, "")
+        .replace(/\*/g, "")
+        .trim()
+        .slice(0, 200);
+      const utt = new SpeechSynthesisUtterance(cleanText);
+      utt.lang = currentLanguage.sttCode;
+
+      const voices = window.speechSynthesis.getVoices();
+      const matchedVoice = voices.find(
+        (v) => v.lang.startsWith(targetLang) || v.lang.includes(targetLang)
+      );
+      if (matchedVoice) {
+        utt.voice = matchedVoice;
+      }
+      utt.rate = 1.0;
+      utt.onend = () => { setIsBotSpeaking(false); onDone?.(); };
+      utt.onerror = () => { setIsBotSpeaking(false); onDone?.(); };
+      window.speechSynthesis.speak(utt);
+    };
+  }, [currentLanguage]);
+
+  // ── Toggle manual mic ─────────────────────────────────────────────
+  const toggleMic = () => {
+    if (!SR) { alert("Speech recognition requires Chrome or Edge."); return; }
     if (isListening) {
-      recognitionRef.current?.stop();
+      recRef.current?.stop();
     } else {
-      window.speechSynthesis.cancel(); // Stop talking when user starts speaking
-      recognitionRef.current?.start();
+      if (audioRef.current) { audioRef.current.pause(); setIsBotSpeaking(false); }
+      window.speechSynthesis.cancel();
+      try { recRef.current?.start(); } catch {}
     }
   };
 
-  // 3. Text-to-Speech (TTS) response reader
-  const speakText = (text: string) => {
-    if (!isSpeakingEnabled) return;
-    
-    // Stop any active speech synthesis
+  // ── Start Live Voice Call ─────────────────────────────────────────
+  const startLiveVoice = () => {
+    if (!SR) { alert("Speech recognition requires Chrome or Edge."); return; }
+    setIsLiveVoice(true);
+    setVoiceTranscript("");
+    setBotReply("");
+    setTimeout(() => {
+      try { recRef.current?.start(); } catch {}
+    }, 400);
+  };
+
+  // ── End Live Voice Call ───────────────────────────────────────────
+  const endLiveVoice = () => {
+    setIsLiveVoice(false);
+    recRef.current?.stop();
+    if (audioRef.current) { audioRef.current.pause(); }
     window.speechSynthesis.cancel();
-
-    // Clean text: strip markdown characters and [BOOKING_READY] tag
-    let cleanText = text
-      .replace(/\[BOOKING_READY:.*?\]/, "")
-      .replace(/\*\*/g, "")
-      .replace(/\*/g, "")
-      .replace(/`/g, "")
-      .trim();
-
-    if (!cleanText) return;
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    
-    // Find an appropriate voice
-    const voices = window.speechSynthesis.getVoices();
-    const englishVoice = voices.find(v => v.lang.includes("en-IN") || v.lang.includes("en-GB") || v.lang.includes("en-US"));
-    if (englishVoice) {
-      utterance.voice = englishVoice;
-    }
-    utterance.rate = 1.0;
-    
-    window.speechSynthesis.speak(utterance);
+    setIsBotSpeaking(false);
+    setIsListening(false);
   };
 
-  const handleScroll = () => {
-    const el = containerRef.current;
-    if (!el) return;
-    setShowScroll(el.scrollTop < el.scrollHeight - el.clientHeight - 100);
-  };
-
-  // 4. Send message flow
+  // ── Send message to AI ─────────────────────────────────────────────
   const sendMessage = async (text?: string) => {
     const content = (text || input).trim();
     if (!content || loading) return;
 
-    // Check if voice booking confirmation is expected
+    // Booking confirm/cancel shortcuts
     if (pendingBooking && bookingStatus === "none") {
       const lower = content.toLowerCase();
-      if (lower.includes("confirm") || lower.includes("yes") || lower.includes("ok")) {
-        confirmVoiceBooking();
-        setInput("");
-        return;
-      } else if (lower.includes("cancel") || lower.includes("no") || lower.includes("stop")) {
-        cancelBookingFlow();
-        setInput("");
-        return;
-      }
+      if (/confirm|yes|ok|సరే|हाँ|ஆம்|ಹೌದು|हो/.test(lower)) { confirmBooking(); setInput(""); return; }
+      if (/cancel|no|stop|వద్దు|नहीं|இல்லை|ಬೇಡ/.test(lower)) { cancelBooking(); setInput(""); return; }
     }
 
     const userMsg: Message = { role: "user", content };
-    const updatedMessages = [...messages, userMsg];
-
-    setMessages(updatedMessages);
+    const history = [...messages, userMsg];
+    setMessages(history);
     setInput("");
     setLoading(true);
-    setOllamaOffline(false);
-    
-    // If user inputs a new search during pending booking, reset the booking card
-    if (pendingBooking) {
-      setPendingBooking(null);
-      setBookingStatus("none");
-    }
+    if (pendingBooking) { setPendingBooking(null); setBookingStatus("none"); }
 
     try {
       const token = localStorage.getItem("token");
       const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+      const res = await axios.post(
+        `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/chat`,
+        { messages: history.map(m => ({ role: m.role, content: m.content })), language: currentLanguage.code },
+        config
+      );
 
-      const res = await axios.post("https://kisanseeva-backend.onrender.com/api/chat", {
-        messages: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
-      }, config);
+      const reply: string = res.data.reply;
 
-      const reply = res.data.reply;
-      
-      // Parse structured booking trigger tag: [BOOKING_READY: {"serviceId": 3, "date": "2026-07-15", ...}]
+      // Parse booking tag
       const match = reply.match(/\[BOOKING_READY:\s*(.*?)\]/);
       if (match) {
-        try {
-          const bookingData = JSON.parse(match[1]) as BookingDetails;
-          setPendingBooking(bookingData);
-          setBookingStatus("none");
-        } catch (e) {
-          console.error("Booking JSON parse error", e);
-        }
+        try { setPendingBooking(JSON.parse(match[1])); setBookingStatus("none"); } catch {}
       }
 
-      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
-      speakText(reply);
-    } catch (err: any) {
-      const isOffline = err.response?.data?.offline || err.response?.status === 503;
-      setOllamaOffline(isOffline);
-      const errMsg = isOffline
-        ? "⚠️ I'm currently offline. Please make sure **Ollama** is running on your machine.\n\nRun this in your terminal:\n`ollama serve`\n\nThen try again."
-        : "❌ Sorry, something went wrong. Please try again in a moment.";
-      setMessages((prev) => [...prev, { role: "assistant", content: errMsg }]);
-      speakText(errMsg);
+      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+      setBotReply(reply.replace(/\[BOOKING_READY:.*?\]/g, "").trim());
+
+      // Speak reply — in live mode, restart mic after speaking
+      speak(reply, () => {
+        if (isLiveRef.current) restartListening(400);
+      });
+
+    } catch {
+      const err = "Sorry, something went wrong. Please try again.";
+      setMessages(prev => [...prev, { role: "assistant", content: err }]);
+      if (isLiveRef.current) restartListening(800);
     } finally {
       setLoading(false);
       inputRef.current?.focus();
     }
   };
 
-  // 5. Complete Booking Action via API
-  const confirmVoiceBooking = async () => {
+  // ── Confirm booking ───────────────────────────────────────────────
+  const confirmBooking = async () => {
     if (!pendingBooking) return;
     setBookingStatus("submitting");
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw new Error("You must be logged in to confirm a booking.");
-      }
-      
+      if (!localStorage.getItem("token")) throw new Error("Not logged in.");
       await API.post("/bookings", {
         serviceId: pendingBooking.serviceId,
         bookingDate: pendingBooking.date,
         hoursRequired: pendingBooking.hours,
         location: pendingBooking.location,
       });
-
       setBookingStatus("success");
-      const successMsg = "🎉 Awesome! Your booking request has been successfully submitted to the provider. Taking you to your bookings page...";
-      setMessages(prev => [...prev, { role: "assistant", content: successMsg }]);
-      speakText(successMsg);
+      const msg = "🎉 Booking submitted successfully! Redirecting to your bookings...";
+      setMessages(prev => [...prev, { role: "assistant", content: msg }]);
+      speak(msg);
       setPendingBooking(null);
-      
-      // Auto-redirect to My Bookings page after 3 seconds
-      setTimeout(() => {
-        navigate("/farmer/bookings");
-      }, 3000);
-    } catch (err: any) {
+      setTimeout(() => navigate("/farmer/bookings"), 2500);
+    } catch (e: any) {
       setBookingStatus("error");
-      const errText = err.response?.data?.message || err.message || "Booking submission failed.";
-      setMessages(prev => [...prev, { role: "assistant", content: `❌ Booking failed: ${errText}` }]);
-      speakText(`Booking failed: ${errText}`);
+      const msg = `❌ Booking failed: ${e.response?.data?.message || e.message}`;
+      setMessages(prev => [...prev, { role: "assistant", content: msg }]);
     }
   };
 
-  const cancelBookingFlow = () => {
-    setPendingBooking(null);
-    setBookingStatus("none");
-    const cancelMsg = "No problem! I have cancelled the booking request. What would you like to do instead?";
-    setMessages(prev => [...prev, { role: "assistant", content: cancelMsg }]);
-    speakText(cancelMsg);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+  const cancelBooking = () => {
+    setPendingBooking(null); setBookingStatus("none");
+    const msg = "Booking cancelled. How can I help you?";
+    setMessages(prev => [...prev, { role: "assistant", content: msg }]);
   };
 
   const clearChat = () => {
-    setMessages([]);
-    setPendingBooking(null);
-    setBookingStatus("none");
-    setOllamaOffline(false);
+    setMessages([{ role: "assistant", content: l10n.greeting }]);
+    setPendingBooking(null); setBookingStatus("none");
+    if (audioRef.current) audioRef.current.pause();
     window.speechSynthesis.cancel();
-    setTimeout(() => {
-      setMessages([{
-        role: "assistant",
-        content: "🌾 Chat cleared! How can I help you today?"
-      }]);
-    }, 100);
   };
 
-  return (
-    <>
-      {/* Floating Toggle Button */}
-      <button
-        onClick={() => setIsOpen((o) => !o)}
-        aria-label="Open KisanSeeva Chatbot"
-        className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 ${
-          isOpen
-            ? "bg-slate-700 shadow-slate-500/30"
-            : "bg-gradient-to-br from-green-500 to-green-700 shadow-green-600/40"
-        }`}
-      >
-        <div className="relative">
-          {isOpen ? (
-            <X size={22} className="text-white" />
-          ) : (
-            <>
-              <MessageCircle size={24} className="text-white" />
-              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-yellow-400 border-2 border-white animate-pulse" />
-            </>
+  // ══════════════════════════════════════════════════════════════════
+  //  LIVE VOICE CALL UI  (fullscreen overlay, no chat visible)
+  // ══════════════════════════════════════════════════════════════════
+  if (isOpen && isLiveVoice) {
+    return (
+      <div className="fixed inset-0 z-[999] bg-gradient-to-b from-slate-900 via-green-950 to-slate-900 flex flex-col items-center justify-center select-none">
+        {/* Header */}
+        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-2 text-white/80 text-sm font-semibold">
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            Live Voice Call — {currentLanguage.nativeName}
+          </div>
+          <LanguageSelector variant="dark" />
+        </div>
+
+        {/* Avatar + pulse rings */}
+        <div className="relative flex items-center justify-center mb-8">
+          {/* outer pulse rings */}
+          {(isListening || isBotSpeaking) && <>
+            <span className="absolute w-52 h-52 rounded-full border-2 border-green-400/20 animate-ping" style={{ animationDuration: "1.4s" }} />
+            <span className="absolute w-40 h-40 rounded-full border-2 border-green-400/30 animate-ping" style={{ animationDuration: "1.1s" }} />
+          </>}
+          {/* bot avatar */}
+          <div className={`w-28 h-28 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 ${
+            isBotSpeaking ? "bg-green-500 scale-110 shadow-green-500/50" :
+            isListening   ? "bg-red-500 scale-105 shadow-red-500/50" :
+            "bg-slate-700"
+          }`}>
+            {isBotSpeaking
+              ? <Volume2 size={44} className="text-white animate-bounce" />
+              : isListening
+              ? <Mic size={44} className="text-white animate-pulse" />
+              : <Bot size={44} className="text-white/80" />
+            }
+          </div>
+        </div>
+
+        {/* Status label */}
+        <p className="text-white text-2xl font-extrabold mb-2">
+          {isBotSpeaking ? "Speaking..." : isListening ? "Listening..." : loading ? "Thinking..." : "KisanSeevaBot"}
+        </p>
+        <p className="text-green-300/70 text-sm font-medium mb-8">
+          {isBotSpeaking ? "Bot is talking — will listen after" : isListening ? "Speak now..." : loading ? "Processing your request..." : "Press mic to speak"}
+        </p>
+
+        {/* Transcript cards */}
+        <div className="w-full max-w-sm px-6 space-y-3 mb-10">
+          {voiceTranscript && (
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-3 text-right">
+              <p className="text-[10px] text-white/40 font-bold uppercase mb-1">You said</p>
+              <p className="text-white text-sm font-semibold">{voiceTranscript}</p>
+            </div>
+          )}
+          {botReply && (
+            <div className="bg-green-500/20 backdrop-blur-sm rounded-2xl px-4 py-3">
+              <p className="text-[10px] text-green-300/60 font-bold uppercase mb-1">Bot replied</p>
+              <p className="text-white/90 text-sm">{botReply.slice(0, 160)}{botReply.length > 160 ? "…" : ""}</p>
+            </div>
           )}
         </div>
-      </button>
 
-      {/* Chat Window */}
-      <div
-        className={`fixed bottom-24 right-6 z-50 w-[380px] max-w-[calc(100vw-2rem)] transition-all duration-300 origin-bottom-right ${
-          isOpen
-            ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
-            : "opacity-0 scale-90 translate-y-4 pointer-events-none"
-        }`}
-      >
-        <div className="bg-white rounded-3xl shadow-2xl shadow-slate-900/20 border border-slate-100 overflow-hidden flex flex-col" style={{ height: "550px" }}>
-          
-          {/* Header */}
-          <div className="bg-gradient-to-r from-green-700 to-green-600 px-5 py-4 flex items-center justify-between shrink-0 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">
+        {/* Controls: manual mic + end call */}
+        <div className="flex items-center gap-6">
+          {/* Manual mic toggle */}
+          <button
+            onClick={toggleMic}
+            className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all cursor-pointer ${
+              isListening ? "bg-red-600 animate-pulse" : "bg-white/10 hover:bg-white/20"
+            }`}
+          >
+            {isListening ? <MicOff size={26} className="text-white" /> : <Mic size={26} className="text-white" />}
+          </button>
+
+          {/* End Call */}
+          <button
+            onClick={endLiveVoice}
+            className="w-20 h-20 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center shadow-2xl transition-all cursor-pointer"
+          >
+            <PhoneOff size={32} className="text-white" />
+          </button>
+
+          {/* Mute bot audio */}
+          <button
+            onClick={() => { if (audioRef.current) { audioRef.current.pause(); } window.speechSynthesis.cancel(); setIsBotSpeaking(false); }}
+            className="w-16 h-16 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center shadow-lg transition-all cursor-pointer"
+          >
+            <VolumeX size={26} className="text-white" />
+          </button>
+        </div>
+
+        <p className="absolute bottom-6 text-white/30 text-xs">Tap the red button to end the call</p>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  REGULAR CHAT UI  (clean, default mode)
+  // ══════════════════════════════════════════════════════════════════
+  return (
+    <>
+      {/* Floating bubble */}
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="fixed bottom-6 right-6 z-50 bg-gradient-to-br from-green-600 to-emerald-600 text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-all duration-200 flex items-center gap-2 group cursor-pointer"
+          aria-label="Open chatbot"
+        >
+          <div className="relative">
+            <MessageCircle size={26} />
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full animate-ping" />
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full" />
+          </div>
+          <span className="font-bold text-sm max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 whitespace-nowrap pr-1">
+            KisanSeevaBot
+          </span>
+        </button>
+      )}
+
+      {isOpen && (
+        <div className="fixed bottom-4 right-4 z-50 w-full max-w-sm flex flex-col rounded-2xl shadow-2xl overflow-hidden border border-slate-200 bg-white"
+          style={{ height: "82vh", maxHeight: "640px" }}>
+
+          {/* ── Header ── */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-green-700 to-emerald-700 text-white shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
                 <Bot size={18} className="text-white" />
               </div>
               <div>
-                <p className="text-white font-bold text-sm leading-tight flex items-center gap-1.5">
-                  KisanSeevaBot 
-                  {isListening && <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span></span>}
+                <p className="font-extrabold text-sm leading-none">KisanSeevaBot</p>
+                <p className="text-[11px] text-white/70 font-medium mt-0.5 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-300 animate-pulse" />
+                  Online · {currentLanguage.nativeName}
                 </p>
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-1.5 h-1.5 rounded-full ${ollamaOffline ? "bg-red-400" : "bg-green-300 animate-pulse"}`} />
-                  <span className="text-green-100 text-xs">{ollamaOffline ? "Offline" : isListening ? "Listening..." : "Online · Voice enabled"}</span>
-                </div>
               </div>
             </div>
-            
-            {/* Control Icons */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <LanguageSelector variant="compact" />
+              {/* Live Voice Call button */}
               <button
-                onClick={() => {
-                  const state = !isSpeakingEnabled;
-                  setIsSpeakingEnabled(state);
-                  if (!state) window.speechSynthesis.cancel();
-                }}
-                title={isSpeakingEnabled ? "Disable speech feedback" : "Enable speech feedback"}
-                className={`p-1.5 rounded-xl transition ${isSpeakingEnabled ? "bg-white/20 text-yellow-300" : "text-white/60 hover:text-white"}`}
+                onClick={startLiveVoice}
+                className="flex items-center gap-1 bg-white/20 hover:bg-white/30 text-white text-xs font-bold px-2.5 py-1.5 rounded-xl transition cursor-pointer"
+                title="Start hands-free voice call"
               >
-                {isSpeakingEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                <Phone size={13} /> Call
               </button>
-              <button
-                onClick={clearChat}
-                title="Clear chat history"
-                className="p-1.5 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition"
-              >
-                <RefreshCw size={15} />
+              <button onClick={clearChat} className="p-1.5 hover:bg-white/20 rounded-lg transition cursor-pointer" title="Clear chat">
+                <RefreshCw size={15} className="text-white/80" />
               </button>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition"
-              >
-                <X size={15} />
+              <button onClick={() => setIsOpen(false)} className="p-1.5 hover:bg-white/20 rounded-lg transition cursor-pointer">
+                <X size={17} className="text-white/80" />
               </button>
             </div>
           </div>
 
-          {/* Messages Container */}
-          <div
-            ref={containerRef}
-            onScroll={handleScroll}
-            className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50/60 scroll-smooth"
-          >
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex items-end gap-2 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"} max-w-[90%] ${msg.role === "user" ? "ml-auto" : "mr-auto"}`}
-              >
-                {/* Avatar */}
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                  msg.role === "user" ? "bg-blue-500" : "bg-green-600"
-                }`}>
-                  {msg.role === "user" ? <User size={13} className="text-white" /> : <Bot size={13} className="text-white" />}
+          {/* ── Messages ── */}
+          <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3 bg-slate-50">
+            {messages.map((m, i) => (
+              <div key={i} className={`flex gap-2 ${m.role === "user" ? "flex-row-reverse" : "flex-row"} items-end`}>
+                {/* avatar */}
+                <div className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-white text-[10px] font-bold ${m.role === "user" ? "bg-slate-700" : "bg-green-600"}`}>
+                  {m.role === "user" ? <User size={12} /> : <Bot size={12} />}
                 </div>
-
-                {/* Bubble */}
-                <div
-                  className={`px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm max-w-[85%] ${
-                    msg.role === "user"
-                      ? "bg-green-600 text-white rounded-br-sm"
-                      : "bg-white border border-slate-100 text-slate-700 rounded-bl-sm"
-                  }`}
-                  dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
-                />
+                {/* bubble */}
+                <div className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${
+                  m.role === "user"
+                    ? "bg-slate-800 text-white rounded-br-sm"
+                    : "bg-white text-slate-800 border border-slate-100 rounded-bl-sm"
+                }`}>
+                  <div dangerouslySetInnerHTML={{ __html: fmt(m.content) }} />
+                </div>
               </div>
             ))}
 
-            {loading && <TypingIndicator />}
-
-            {/* Inline Booking Confirmation Card */}
-            {pendingBooking && (
-              <div className="bg-white rounded-2xl border-2 border-green-500 shadow-xl p-4 space-y-3 animate-fade-in relative overflow-hidden">
-                <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-xl uppercase tracking-wider">
-                  Voice Booking
+            {loading && (
+              <div className="flex items-end gap-2">
+                <div className="w-6 h-6 rounded-full bg-green-600 flex items-center justify-center">
+                  <Bot size={12} className="text-white" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                  <Tractor className="text-green-600" size={16} />
-                  Confirm Rental Request
-                </h4>
-                <div className="space-y-1.5 text-xs text-slate-650 bg-slate-50 p-3 rounded-xl">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Service ID:</span>
-                    <span className="font-semibold text-slate-800">#{pendingBooking.serviceId}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Booking Date:</span>
-                    <span className="font-semibold text-slate-800">{pendingBooking.date}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Duration:</span>
-                    <span className="font-semibold text-slate-800">{pendingBooking.hours} Hours</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Location:</span>
-                    <span className="font-semibold text-slate-800 truncate max-w-[150px]">{pendingBooking.location}</span>
+                <div className="bg-white border border-slate-100 rounded-2xl rounded-bl-sm px-4 py-2.5 shadow-sm">
+                  <div className="flex gap-1 items-center h-4">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: "300ms" }} />
                   </div>
                 </div>
-
-                {bookingStatus === "error" && (
-                  <div className="text-[11px] font-medium text-red-500 flex items-center gap-1">
-                    <AlertCircle size={12} />
-                    Failed to book. Check your login status.
-                  </div>
-                )}
-
-                <div className="flex gap-2 text-xs pt-1.5">
-                  <button
-                    onClick={cancelBookingFlow}
-                    disabled={bookingStatus === "submitting"}
-                    className="flex-1 py-2 border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl transition font-semibold"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmVoiceBooking}
-                    disabled={bookingStatus === "submitting"}
-                    className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl transition font-semibold flex items-center justify-center gap-1"
-                  >
-                    {bookingStatus === "submitting" ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <>
-                        <Check size={12} /> Confirm
-                      </>
-                    )}
-                  </button>
-                </div>
-                <p className="text-[10px] text-center text-slate-400 font-medium animate-pulse">
-                  🔊 Say "confirm" or click to place booking.
-                </p>
               </div>
             )}
 
-            {/* Scroll anchor */}
+            {/* Pending booking card */}
+            {pendingBooking && (
+              <div className="bg-green-50 border border-green-200 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-center gap-2 text-green-800 font-bold text-xs">
+                  <Tractor size={15} className="text-green-600" /> Confirm Booking?
+                </div>
+                <div className="text-xs text-slate-700 space-y-1">
+                  <p><strong>Service:</strong> #{pendingBooking.serviceId}</p>
+                  <p><strong>Date:</strong> {pendingBooking.date}</p>
+                  <p><strong>Hours:</strong> {pendingBooking.hours}</p>
+                  <p><strong>Location:</strong> {pendingBooking.location}</p>
+                </div>
+                {bookingStatus === "none" && (
+                  <div className="flex gap-2">
+                    <button onClick={cancelBooking} className="flex-1 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition cursor-pointer">
+                      Cancel
+                    </button>
+                    <button onClick={confirmBooking} className="flex-1 py-1.5 text-xs font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl flex items-center justify-center gap-1 cursor-pointer">
+                      <Check size={13} /> Confirm
+                    </button>
+                  </div>
+                )}
+                {bookingStatus === "submitting" && (
+                  <div className="flex justify-center py-1 text-xs text-green-700 font-bold items-center gap-1.5">
+                    <Loader2 className="animate-spin" size={14} /> Submitting...
+                  </div>
+                )}
+              </div>
+            )}
             <div ref={bottomRef} />
           </div>
 
-          {/* Scroll Down Trigger */}
-          {showScroll && (
-            <button
-              onClick={() => bottomRef.current?.scrollIntoView({ behavior: "smooth" })}
-              className="absolute bottom-24 right-10 bg-white border border-slate-200 shadow-md rounded-full p-1.5 text-slate-500 hover:text-green-600 hover:border-green-300 transition"
-            >
-              <ChevronDown size={16} />
-            </button>
-          )}
-
-          {/* Suggested Questions */}
-          {messages.length === 1 && (
-            <div className="px-4 pb-2 flex flex-nowrap overflow-x-auto gap-1.5 shrink-0 bg-white border-t border-slate-100 pt-2 no-scrollbar">
-              {SUGGESTED_QUESTIONS.map((q) => (
+          {/* ── Suggested Questions (only when no conversation yet) ── */}
+          {messages.length <= 1 && (
+            <div className="px-3 py-2 border-t border-slate-100 bg-white flex gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+              {l10n.suggestions.map((q, i) => (
                 <button
-                  key={q}
+                  key={i}
                   onClick={() => sendMessage(q)}
-                  disabled={loading}
-                  className="text-xs px-3 py-1.5 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition font-medium whitespace-nowrap disabled:opacity-50"
+                  className="whitespace-nowrap text-[11px] bg-slate-50 hover:bg-green-50 text-slate-600 hover:text-green-700 font-semibold px-2.5 py-1.5 rounded-full border border-slate-200 hover:border-green-300 transition shrink-0 cursor-pointer"
                 >
                   {q}
                 </button>
@@ -516,43 +584,37 @@ export default function Chatbot() {
             </div>
           )}
 
-          {/* Input Panel */}
-          <div className="px-4 py-3 bg-white border-t border-slate-100 flex items-center gap-2 shrink-0">
-            {/* Voice Input Button */}
-            <button
-              onClick={toggleListen}
-              disabled={loading}
-              title={isListening ? "Listening... click to stop" : "Start speaking"}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                isListening 
-                  ? "bg-red-500 hover:bg-red-600 text-white animate-pulse" 
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-50"
-              }`}
-            >
-              {isListening ? <MicOff size={16} /> : <Mic size={16} />}
-            </button>
-
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={isListening ? "Listening to your voice..." : "Type or speak crop/booking questions..."}
-              disabled={loading}
-              className="flex-1 text-sm px-4 py-2.5 rounded-full border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 transition disabled:opacity-60"
-            />
-            <button
-              onClick={() => sendMessage()}
-              disabled={loading || !input.trim()}
-              className="w-10 h-10 rounded-full bg-green-600 hover:bg-green-700 text-white flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 shrink-0 shadow-lg shadow-green-600/25"
-            >
-              {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-            </button>
+          {/* ── Input bar ── */}
+          <div className="px-3 py-2.5 bg-white border-t border-slate-100 shrink-0">
+            <div className="flex items-center gap-2 bg-slate-100 rounded-2xl px-3 py-1.5 focus-within:ring-2 focus-within:ring-green-400/30 focus-within:bg-white transition">
+              <button
+                onClick={toggleMic}
+                className={`p-1.5 rounded-xl transition cursor-pointer ${isListening ? "bg-red-500 text-white animate-pulse" : "text-slate-400 hover:text-green-600"}`}
+                title={isListening ? "Stop listening" : `Speak (${currentLanguage.nativeName})`}
+              >
+                {isListening ? <MicOff size={17} /> : <Mic size={17} />}
+              </button>
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                placeholder={l10n.placeholder}
+                disabled={loading}
+                className="flex-1 bg-transparent border-0 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none min-w-0"
+              />
+              <button
+                onClick={() => sendMessage()}
+                disabled={!input.trim() || loading}
+                className="p-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-xl transition cursor-pointer shadow-sm"
+              >
+                <Send size={16} />
+              </button>
+            </div>
           </div>
+
         </div>
-      </div>
+      )}
     </>
   );
 }
-

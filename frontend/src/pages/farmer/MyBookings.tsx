@@ -3,6 +3,7 @@ import { Search, Filter, Tractor, Star, CheckCircle2, XCircle, Clock, MessageSqu
 import { KSCard, KSBadge, KSButton, KSModal } from "../../components/ui";
 import LiveTrackingModal from "../../components/dashboard/LiveTrackingModal";
 import PaymentModal from "../../components/dashboard/PaymentModal";
+import PublicProfileModal from "../../components/dashboard/PublicProfileModal";
 import API from "../../services/api";
 
 interface Booking {
@@ -19,11 +20,17 @@ interface Booking {
   service_name: string;
   service_type: string;
   price_per_hour: string;
+  pricing_model?: "hourly" | "fixed";
   provider_name: string;
   provider_phone: string;
+  provider_user_id: number;
   payment_status?: string;
   payment_method?: string;
   payment_transaction_id?: string;
+  timer_status?: "idle" | "running" | "stopped";
+  start_time?: string;
+  stop_time?: string;
+  actual_hours?: string;
 }
 
 const MyBookings = () => {
@@ -37,11 +44,15 @@ const MyBookings = () => {
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [trackingId, setTrackingId] = useState<number | null>(null);
+  const [viewProfileId, setViewProfileId] = useState<number | null>(null);
   
   // Payment states
   const [isPayOpen, setIsPayOpen] = useState(false);
   const [payBookingId, setPayBookingId] = useState<number | null>(null);
   const [payBookingPrice, setPayBookingPrice] = useState(0);
+
+  // Timer loading state
+  const [timerActionLoading, setTimerActionLoading] = useState<number | null>(null);
 
   const fetchBookings = async () => {
     try {
@@ -75,6 +86,33 @@ const MyBookings = () => {
       setActionLoading(null);
     }
   };
+
+  const handleStartTimer = async (bookingId: number) => {
+    setTimerActionLoading(bookingId);
+    try {
+      await API.put(`/bookings/${bookingId}/start-timer`);
+      fetchBookings();
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Failed to start timer.");
+    } finally {
+      setTimerActionLoading(null);
+    }
+  };
+
+  const handleStopTimer = async (bookingId: number) => {
+    if (!window.confirm("Are you sure the work is finished? This will stop the timer and calculate the final bill.")) return;
+    setTimerActionLoading(bookingId);
+    try {
+      const res = await API.put(`/bookings/${bookingId}/stop-timer`);
+      alert(`Work completed! Final bill: ₹${parseFloat(res.data.finalPrice).toLocaleString("en-IN")} (${res.data.actualHours} hrs actual time).`);
+      fetchBookings();
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Failed to stop timer.");
+    } finally {
+      setTimerActionLoading(null);
+    }
+  };
+
 
   const openRatingModal = (id: number) => {
     setSelectedBookingId(id);
@@ -185,13 +223,26 @@ const MyBookings = () => {
                   <p className="text-sm text-slate-500 mt-0.5">
                     Provider: <span className="font-semibold text-slate-700">{b.provider_name}</span> ({b.provider_phone})
                   </p>
+                  {(b.status === 'confirmed' || b.status === 'completed') && (
+                    <button
+                      onClick={() => setViewProfileId(b.provider_user_id)}
+                      className="text-xs text-blue-600 underline hover:text-blue-800 font-semibold"
+                    >
+                      View Provider Profile →
+                    </button>
+                  )}
                   <p className="text-xs text-slate-400 mt-1">
                     Location: <span className="text-slate-600">{b.location}</span>
                   </p>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-400">
                     <span>Scheduled: <strong className="text-slate-700">{formatSQLDate(b.booking_date)}</strong></span>
-                    <span>Duration: <strong className="text-slate-700">{b.hours_required} hrs</strong></span>
-                    <span>Total Cost: <strong className="text-slate-700">₹{parseFloat(b.total_price).toLocaleString("en-IN")}</strong></span>
+                    <span>Billing Mode: <strong className={b.pricing_model === "fixed" ? "text-purple-600" : "text-blue-600"}>{b.pricing_model === "fixed" ? "🔧 Fixed Service Charge" : "⏱️ Hourly Timer"}</strong></span>
+                    {b.actual_hours ? (
+                      <span>Actual Time: <strong className="text-green-700 font-bold">{b.actual_hours} hrs</strong></span>
+                    ) : (
+                      <span>Estimated: <strong className="text-slate-700">{b.hours_required} hrs</strong></span>
+                    )}
+                    <span>Total Cost: <strong className="text-slate-800 text-sm font-extrabold">₹{parseFloat(b.total_price).toLocaleString("en-IN")}</strong></span>
                   </div>
                 </div>
               </div>
@@ -243,6 +294,27 @@ const MyBookings = () => {
                     onClick={() => setTrackingId(b.id)}
                   >
                     Track Provider
+                  </KSButton>
+                )}
+
+                {/* Work Timer Action (Only for Farmer & Confirmed Bookings) */}
+                {b.status === "confirmed" && b.timer_status !== "running" && b.pricing_model !== "fixed" && (
+                  <KSButton
+                    className="px-4 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 border-none flex items-center gap-1 animate-pulse"
+                    disabled={timerActionLoading === b.id}
+                    onClick={() => handleStartTimer(b.id)}
+                  >
+                    ⏱️ Start Work Timer
+                  </KSButton>
+                )}
+
+                {b.status === "confirmed" && b.timer_status === "running" && (
+                  <KSButton
+                    className="px-4 py-2 text-xs bg-red-600 hover:bg-red-700 border-none flex items-center gap-1 font-bold animate-bounce"
+                    disabled={timerActionLoading === b.id}
+                    onClick={() => handleStopTimer(b.id)}
+                  >
+                    🛑 Stop Timer & Complete Work
                   </KSButton>
                 )}
 
@@ -357,6 +429,11 @@ const MyBookings = () => {
           bookingId={trackingId}
           role="farmer"
         />
+      )}
+
+      {/* Public Profile Modal */}
+      {viewProfileId && (
+        <PublicProfileModal userId={viewProfileId} onClose={() => setViewProfileId(null)} />
       )}
     </div>
   );

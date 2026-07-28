@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { Menu, X, Tractor, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+import LanguageSelector from "../common/LanguageSelector";
+
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -76,6 +78,7 @@ function Navbar() {
 
         {/* CTA Buttons */}
         <div className="hidden md:flex items-center gap-3">
+          <LanguageSelector variant="dark" />
           <Link
             to="/login"
             className="px-5 py-2.5 text-sm font-semibold text-slate-300 hover:text-white border border-white/10 hover:border-white/25 rounded-xl transition-all duration-200 hover:bg-white/5"

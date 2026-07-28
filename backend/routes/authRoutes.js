@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { register, login, getProfile, updateProfile, forgotPassword, resetPassword } = require("../controllers/authController");
+const { register, login, getProfile, updateProfile, forgotPassword, resetPassword, getPublicProfile } = require("../controllers/authController");
 const { verifyToken } = require("../middleware/auth");
 const upload = require("../middleware/upload");
 const { uploadDocuments } = require("../controllers/uploadController");
@@ -8,6 +8,7 @@ const { uploadDocuments } = require("../controllers/uploadController");
 router.post("/register", register);
 router.post("/login", login);
 router.get("/profile", verifyToken, getProfile);
+router.get("/user/:id/public", verifyToken, getPublicProfile);
 router.put("/profile", verifyToken, updateProfile);
 
 // Password Reset Routes
