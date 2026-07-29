@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import { BarChart3, Clock, CheckCircle2, IndianRupee, Send, Users, AlertCircle } from "lucide-react";
+import API from "../../services/api";
 
 interface Survey {
   id: number;
@@ -34,8 +34,8 @@ export default function SurveyResponsePage() {
     setLoading(true);
     try {
       const [activeRes, closedRes] = await Promise.all([
-        axios.get("https://kisanseeva-backend.onrender.com/api/surveys/user/active", { headers }),
-        axios.get("https://kisanseeva-backend.onrender.com/api/surveys/user/closed", { headers }),
+        API.get("/surveys/user/active"),
+        API.get("/surveys/user/closed"),
       ]);
       setActiveSurveys(activeRes.data.surveys);
       setClosedSurveys(closedRes.data.surveys);
@@ -54,10 +54,10 @@ export default function SurveyResponsePage() {
 
     setSubmitting(surveyId);
     try {
-      await axios.post(`https://kisanseeva-backend.onrender.com/api/surveys/${surveyId}/respond`, {
+      await API.post(`/surveys/${surveyId}/respond`, {
         suggested_price: parseFloat(price),
         comment: comments[surveyId] || ""
-      }, { headers });
+      });
       setMessages(m => ({ ...m, [surveyId]: { text: "Your suggestion has been submitted!", ok: true } }));
       fetchSurveys();
     } catch (err: any) {

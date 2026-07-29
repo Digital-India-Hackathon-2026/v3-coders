@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import { PlusCircle, BarChart3, Clock, CheckCircle2, X, ChevronDown, ChevronUp, IndianRupee, Users, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import API from "../../services/api";
 
 interface Survey {
   id: number;
@@ -47,7 +47,7 @@ export default function SurveyPage() {
   const fetchSurveys = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("https://kisanseeva-backend.onrender.com/api/surveys", { headers });
+      const res = await API.get("/surveys");
       setSurveys(res.data.surveys);
     } catch { /* empty */ }
     setLoading(false);
@@ -56,7 +56,7 @@ export default function SurveyPage() {
   const fetchDetail = async (id: number) => {
     setDetailLoading(true);
     try {
-      const res = await axios.get(`https://kisanseeva-backend.onrender.com/api/surveys/${id}`, { headers });
+      const res = await API.get(`/surveys/${id}`);
       setDetail(res.data);
     } catch { /* empty */ }
     setDetailLoading(false);
@@ -79,7 +79,7 @@ export default function SurveyPage() {
     e.preventDefault();
     setCreating(true);
     try {
-      await axios.post("https://kisanseeva-backend.onrender.com/api/surveys", form, { headers });
+      await API.post("/surveys", form);
       setShowCreate(false);
       setForm({ title: "", service_type: "Tractor", description: "", deadline: "" });
       fetchSurveys();
@@ -94,7 +94,7 @@ export default function SurveyPage() {
   const handleFinalize = async (id: number) => {
     if (!finalizePrice || isNaN(parseFloat(finalizePrice))) return;
     try {
-      await axios.put(`https://kisanseeva-backend.onrender.com/api/surveys/${id}/finalize`, { finalized_price: finalizePrice }, { headers });
+      await API.put(`/surveys/${id}/finalize`, { finalized_price: finalizePrice });
       setFinalizePrice("");
       fetchSurveys();
       fetchDetail(id);

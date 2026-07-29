@@ -5,7 +5,7 @@ import {
   MessageCircle, X, Send, Bot, User, Loader2, RefreshCw,
   Mic, MicOff, Volume2, VolumeX, Check, Tractor, Phone, PhoneOff
 } from "lucide-react";
-import API from "../../services/api";
+import API, { getBaseURL } from "../../services/api";
 import { useLanguage } from "../../context/LanguageContext";
 import LanguageSelector from "./LanguageSelector";
 
@@ -65,12 +65,11 @@ function stripMarkdown(text: string): string {
     .trim();
 }
 
-// ─── Backend Proxy TTS (supports Indian languages reliably without CORS) ───────
 function speakWithBackendTTS(text: string, langCode: string): HTMLAudioElement {
   const clean = stripMarkdown(text).slice(0, 250);
   if (!clean) return new Audio();
   const encoded = encodeURIComponent(clean);
-  const backendUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  const backendUrl = getBaseURL();
   const url = `${backendUrl}/tts?text=${encoded}&lang=${langCode}`;
   const audio = new Audio(url);
   audio.volume = 1.0;
@@ -276,13 +275,10 @@ export default function Chatbot() {
     if (pendingBooking) { setPendingBooking(null); setBookingStatus("none"); }
 
     try {
-      const token = localStorage.getItem("token");
-      const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-      const res = await axios.post(
-        `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/chat`,
-        { messages: history.map(m => ({ role: m.role, content: m.content })), language: currentLanguage.code },
-        config
-      );
+      const res = await API.post("/chat", {
+        messages: history.map(m => ({ role: m.role, content: m.content })),
+        language: currentLanguage.code
+      });
 
       const reply: string = res.data.reply;
 

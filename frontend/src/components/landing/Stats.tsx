@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Users, Tractor, CalendarCheck2, CheckCircle2, TrendingUp, Sparkles } from "lucide-react";
 import axios from "axios";
+import API from "../../services/api";
 
 function useCountUp(end: number, duration = 2000, decimals = 0, started = false) {
   const [count, setCount] = useState(0);
@@ -96,7 +97,7 @@ function Stats() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get(`https://kisanseeva-backend.onrender.com/api/admin/public-stats`)
+    API.get(`/admin/public-stats`)
       .then((res) => setLiveStats(res.data))
       .catch(() => setLiveStats({ farmers: 0, providers: 0, bookings: 0, completed: 0 }))
       .finally(() => setLoading(false));
